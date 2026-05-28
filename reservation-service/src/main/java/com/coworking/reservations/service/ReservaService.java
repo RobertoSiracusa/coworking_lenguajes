@@ -36,6 +36,7 @@ public class ReservaService {
     private final IntervalTree intervalTree = new IntervalTree();
     private final AuthClient authClient;
     private final EspacioClient espacioClient;
+    private final BillingClient billingClient;
 
     // Reconstruir cola e interval tree al arrancar
     @PostConstruct
@@ -55,12 +56,33 @@ public class ReservaService {
                 pendientes.size(), intervalTree.tamanio());
     }
 
+    // Validar franja horaria: minutos en {0, 30}, sin segundos, duracion multiplo de 1 hora
+    private void validarFranjaHoraria(LocalDateTime inicio, LocalDateTime fin) {
+        if (inicio.getSecond() != 0 || inicio.getNano() != 0
+                || (inicio.getMinute() != 0 && inicio.getMinute() != 30)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La hora de inicio debe ser en punto (:00) o media hora (:30)");
+        }
+        if (fin.getSecond() != 0 || fin.getNano() != 0
+                || (fin.getMinute() != 0 && fin.getMinute() != 30)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La hora de fin debe ser en punto (:00) o media hora (:30)");
+        }
+        long minutos = java.time.Duration.between(inicio, fin).toMinutes();
+        if (minutos <= 0 || minutos % 60 != 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La duracion debe ser multiplo de 1 hora");
+        }
+    }
+
     // Crear reserva con validacion HTTP a auth y space services
     public ReservaResponse crear(ReservaRequest req, Long usuarioId, String jwt) {
         if (!req.getFechaFin().isAfter(req.getFechaInicio())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "La fecha de fin debe ser posterior a la de inicio");
         }
+
+        validarFranjaHoraria(req.getFechaInicio(), req.getFechaFin());
 
         // Validar espacio existe en space service y obtener datos
         EspacioDto espacio = espacioClient.obtenerEspacio(req.getEspacioId(), jwt);
@@ -75,7 +97,7 @@ public class ReservaService {
 
         // Detectar conflicto con interval tree O(log n)
         boolean conflicto = intervalTree.haySolapamiento(
-                req.getFechaInicio(), req.getFechaFin(), null);
+                req.getEspacioId(), req.getFechaInicio(), req.getFechaFin(), null);
         if (conflicto) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "El espacio ya tiene una reserva en ese horario");
@@ -119,9 +141,13 @@ public class ReservaService {
                     "La fecha de fin debe ser posterior a la de inicio");
         }
 
+        if (req.getFechaInicio() != null || req.getFechaFin() != null) {
+            validarFranjaHoraria(nuevoInicio, nuevoFin);
+        }
+
         // Si cambian fechas, verificar conflicto ignorando esta misma reserva
         if (req.getFechaInicio() != null || req.getFechaFin() != null) {
-            if (intervalTree.haySolapamiento(nuevoInicio, nuevoFin, id)) {
+            if (intervalTree.haySolapamiento(reserva.getEspacioId(), nuevoInicio, nuevoFin, id)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Las nuevas fechas tienen conflicto con otra reserva");
             }
@@ -157,8 +183,31 @@ public class ReservaService {
                         HttpStatus.NOT_FOUND, "No hay reservas pendientes en la cola"));
     }
 
-    // Marcar como completada (admin)
-    public ReservaResponse completar(Long id) {
+    // Facturar reserva manualmente (admin o dueño)
+    public Map<String, Object> facturar(Long id, Long usuarioId, boolean esAdmin, String jwt) {
+        Reserva reserva = repo.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
+        if (!esAdmin && !reserva.getUsuarioId().equals(usuarioId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Solo puedes facturar tus propias reservas");
+        }
+        if (reserva.getEstado() == Reserva.EstadoReserva.CANCELADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "No se puede facturar una reserva cancelada");
+        }
+        boolean ok = billingClient.generarFactura(reserva, jwt);
+        if (!ok) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "No se pudo generar la factura (puede que ya este facturada o billing service no responde)");
+        }
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("mensaje", "Factura generada");
+        resp.put("reserva_id", id);
+        return resp;
+    }
+
+    // Marcar como completada (admin) - genera factura automaticamente
+    public ReservaResponse completar(Long id, String jwt) {
         Reserva reserva = repo.findById(id).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
         if (reserva.getEstado() != Reserva.EstadoReserva.CONFIRMADA) {
@@ -167,7 +216,14 @@ public class ReservaService {
         }
         reserva.setEstado(Reserva.EstadoReserva.COMPLETADA);
         intervalTree.eliminar(id);
-        return ReservaResponse.desde(repo.save(reserva));
+        Reserva guardada = repo.save(reserva);
+
+        // Trigger automatico: generar factura via billing service
+        boolean ok = billingClient.generarFactura(guardada, jwt);
+        if (!ok) {
+            System.err.println("Reserva " + id + " completada pero factura fallo. Generar manualmente.");
+        }
+        return ReservaResponse.desde(guardada);
     }
 
     public Map<String, Object> estadoCola() {
@@ -213,8 +269,19 @@ public class ReservaService {
                 Math.max(0, pagina - 1),
                 Math.min(100, Math.max(1, porPagina)),
                 Sort.by(Sort.Direction.DESC, "creadoEn"));
-        Page<Reserva> page = repo.buscarConFiltros(
-                usuarioFiltro, estado, prioridad, desde, hasta, pageable);
+
+        // Construir Specification dinamica: solo agrega filtros no nulos
+        org.springframework.data.jpa.domain.Specification<Reserva> spec = (root, q, cb) -> {
+            java.util.List<jakarta.persistence.criteria.Predicate> preds = new java.util.ArrayList<>();
+            if (usuarioFiltro != null) preds.add(cb.equal(root.get("usuarioId"), usuarioFiltro));
+            if (estado != null)        preds.add(cb.equal(root.get("estado"), estado));
+            if (prioridad != null)     preds.add(cb.equal(root.get("prioridad"), prioridad));
+            if (desde != null)         preds.add(cb.greaterThanOrEqualTo(root.get("fechaInicio"), desde));
+            if (hasta != null)         preds.add(cb.lessThanOrEqualTo(root.get("fechaInicio"), hasta));
+            return cb.and(preds.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        Page<Reserva> page = repo.findAll(spec, pageable);
 
         List<ReservaResponse> enriquecidas = page.getContent().stream()
                 .map(r -> {

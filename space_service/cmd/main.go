@@ -31,6 +31,7 @@ func main() {
 	handler := handlers.NewEspacioHandler(repo)
 
 	r := gin.Default()
+	r.Use(middleware.CORS())
 
 	// Health publico
 	r.GET("/health", func(c *gin.Context) {

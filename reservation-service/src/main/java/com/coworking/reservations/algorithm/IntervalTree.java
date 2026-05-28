@@ -43,16 +43,16 @@ public class IntervalTree {
         return tamanio < antes;
     }
 
-    // O(log n + k) - busca solapamientos con [inicio, fin) excluyendo reserva ignorada
-    public List<Reserva> buscarSolapamientos(LocalDateTime inicio, LocalDateTime fin, Long ignorarId) {
+    // O(log n + k) - busca solapamientos con [inicio, fin) en un espacio especifico
+    public List<Reserva> buscarSolapamientos(Long espacioId, LocalDateTime inicio, LocalDateTime fin, Long ignorarId) {
         List<Reserva> resultado = new ArrayList<>();
-        buscarRec(raiz, inicio, fin, ignorarId, resultado);
+        buscarRec(raiz, espacioId, inicio, fin, ignorarId, resultado);
         return resultado;
     }
 
-    // Existe algun solapamiento (excluyendo id ignorado)
-    public boolean haySolapamiento(LocalDateTime inicio, LocalDateTime fin, Long ignorarId) {
-        return !buscarSolapamientos(inicio, fin, ignorarId).isEmpty();
+    // Existe algun solapamiento en el espacio dado
+    public boolean haySolapamiento(Long espacioId, LocalDateTime inicio, LocalDateTime fin, Long ignorarId) {
+        return !buscarSolapamientos(espacioId, inicio, fin, ignorarId).isEmpty();
     }
 
     public int tamanio() {
@@ -93,24 +93,22 @@ public class IntervalTree {
     }
 
     // Recorre el arbol descartando subarboles que no pueden tener solapamiento
-    private void buscarRec(Nodo nodo, LocalDateTime inicio, LocalDateTime fin,
+    private void buscarRec(Nodo nodo, Long espacioId, LocalDateTime inicio, LocalDateTime fin,
                             Long ignorarId, List<Reserva> resultado) {
         if (nodo == null) return;
-        // Si maxFin del subarbol < inicio buscado, descartar
         if (nodo.maxFin.isBefore(inicio) || nodo.maxFin.isEqual(inicio)) return;
-        if (nodo.izq != null) buscarRec(nodo.izq, inicio, fin, ignorarId, resultado);
-        // Solapa si inicio < fin del nodo Y fin > inicio del nodo
+        if (nodo.izq != null) buscarRec(nodo.izq, espacioId, inicio, fin, ignorarId, resultado);
         boolean solapa = nodo.inicio.isBefore(fin) && nodo.fin.isAfter(inicio);
         boolean esIgnorado = ignorarId != null && nodo.reserva.getId().equals(ignorarId);
+        boolean mismoEspacio = espacioId == null || nodo.reserva.getEspacioId().equals(espacioId);
         Reserva.EstadoReserva est = nodo.reserva.getEstado();
         boolean activa = est == Reserva.EstadoReserva.PENDIENTE
                        || est == Reserva.EstadoReserva.CONFIRMADA;
-        if (solapa && !esIgnorado && activa) {
+        if (solapa && !esIgnorado && activa && mismoEspacio) {
             resultado.add(nodo.reserva);
         }
-        // Si inicio del nodo >= fin buscado, no necesitamos ir a la derecha
         if (!nodo.inicio.isAfter(fin) && !nodo.inicio.isEqual(fin)) {
-            if (nodo.der != null) buscarRec(nodo.der, inicio, fin, ignorarId, resultado);
+            if (nodo.der != null) buscarRec(nodo.der, espacioId, inicio, fin, ignorarId, resultado);
         }
     }
 

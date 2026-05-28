@@ -1,9 +1,8 @@
 # Etapa 1: compilar
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
+ENV GOFLAGS=-mod=mod
 RUN go build -o space-service ./cmd/main.go
 
 # Etapa 2: imagen final liviana (sin Go instalado)

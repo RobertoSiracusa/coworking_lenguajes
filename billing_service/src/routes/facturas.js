@@ -40,8 +40,8 @@ function _paginar(items, pagina, por_pagina) {
   };
 }
 
-// POST /facturas - crear factura (valida usuario via auth)
-router.post('/', solo_admin, async (req, res) => {
+// POST /facturas - crear factura (admin o dueño de la reserva)
+router.post('/', async (req, res) => {
   const {
     reserva_id, usuario_id, espacio_id,
     nombre_espacio, fecha_inicio, fecha_fin, precio_hora,
@@ -51,10 +51,19 @@ router.post('/', solo_admin, async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
-  // Validar que el usuario existe en auth service
-  const existe = await validar_usuario_existe(usuario_id, req.token);
-  if (!existe) {
-    return res.status(404).json({ error: 'Usuario no existe en auth service' });
+  // Permitir si admin o si esta facturando su propia reserva
+  const esAdmin = req.rol === 'admin';
+  const esPropia = parseInt(usuario_id) === req.usuario_id;
+  if (!esAdmin && !esPropia) {
+    return res.status(403).json({ error: 'Solo puedes facturar tus propias reservas' });
+  }
+
+  // Validar usuario existe (solo si es admin, para evitar fetch costoso para user normal)
+  if (esAdmin) {
+    const existe = await validar_usuario_existe(usuario_id, req.token);
+    if (!existe) {
+      return res.status(404).json({ error: 'Usuario no existe en auth service' });
+    }
   }
 
   const { horas, subtotal, impuesto, total } = calcular_factura({

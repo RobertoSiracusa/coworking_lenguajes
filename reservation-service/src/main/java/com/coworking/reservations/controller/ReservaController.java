@@ -82,11 +82,21 @@ public class ReservaController {
         return service.editar(id, req, usuarioId, "admin".equals(rol));
     }
 
-    // PATCH /reservas/{id}/completar - marcar completada (admin)
+    // POST /reservas/{id}/facturar - facturar reserva (admin o dueño)
+    @PostMapping("/reservas/{id}/facturar")
+    public Map<String, Object> facturar(@PathVariable Long id, HttpServletRequest httpReq) {
+        Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
+        String rol = (String) httpReq.getAttribute("rol");
+        String token = (String) httpReq.getAttribute("token");
+        return service.facturar(id, usuarioId, "admin".equals(rol), token);
+    }
+
+    // PATCH /reservas/{id}/completar - marcar completada (admin) + generar factura
     @PatchMapping("/reservas/{id}/completar")
     public ReservaResponse completar(@PathVariable Long id, HttpServletRequest httpReq) {
         verificarAdmin(httpReq);
-        return service.completar(id);
+        String token = (String) httpReq.getAttribute("token");
+        return service.completar(id, token);
     }
 
     // GET /reservas - listar con filtros y paginacion (admin)

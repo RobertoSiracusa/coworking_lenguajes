@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Co-working</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav id="nav" class="hidden">
+    <div class="nav-brand">CO<span class="flash">·</span>WORKING</div>
+    <div class="nav-links">
+      <button data-page="espacios" class="nav-link">Espacios</button>
+      <button data-page="reservas" class="nav-link">Reservas</button>
+      <button data-page="facturas" class="nav-link">Facturas</button>
+      <button data-page="admin" class="nav-link admin-only">Admin</button>
+    </div>
+    <div class="nav-user">
+      <span id="user-info"></span>
+      <button id="btn-logout" class="btn-ghost">Salir</button>
+    </div>
+  </nav>
+
+  <main id="app">
+
+    <!-- Login -->
+    <section id="page-login" class="page active">
+      <div class="card">
+        <h1>Bienvenido<span class="flash">.</span></h1>
+        <p class="sub">Iniciar sesion en la plataforma de co-working</p>
+        <form id="form-login">
+          <label>Email
+            <input type="email" name="email" required>
+          </label>
+          <label>Contrasena
+            <input type="password" name="password" required minlength="6">
+          </label>
+          <button type="submit" class="btn-primary">Entrar</button>
+        </form>
+        <p class="link">No tienes cuenta? <a data-page="registro">Registrate</a></p>
+        <div id="login-error" class="error"></div>
+      </div>
+    </section>
+
+    <!-- Registro -->
+    <section id="page-registro" class="page">
+      <div class="card">
+        <h1>Crear cuenta<span class="flash">.</span></h1>
+        <p class="sub">Acceso instantaneo</p>
+        <form id="form-registro">
+          <label>Nombre
+            <input type="text" name="nombre" required>
+          </label>
+          <label>Email
+            <input type="email" name="email" required>
+          </label>
+          <label>Contrasena
+            <input type="password" name="password" required minlength="6">
+          </label>
+          <button type="submit" class="btn-primary">Registrarme</button>
+        </form>
+        <p class="link">Ya tienes cuenta? <a data-page="login">Inicia sesion</a></p>
+        <div id="registro-error" class="error"></div>
+      </div>
+    </section>
+
+    <!-- Espacios -->
+    <section id="page-espacios" class="page">
+      <header class="page-header">
+        <h2>Espacios disponibles</h2>
+      </header>
+
+      <div class="toolbar">
+        <div class="search-box">
+          <input type="text" id="buscar-espacios" placeholder="Buscar espacios...">
+          <ul id="sugerencias" class="sugerencias"></ul>
+        </div>
+        <select id="filtro-capacidad">
+          <option value="">Cualquier capacidad</option>
+          <option value="2">2+</option>
+          <option value="5">5+</option>
+          <option value="10">10+</option>
+          <option value="20">20+</option>
+        </select>
+        <select id="filtro-orden">
+          <option value="precio">Precio</option>
+          <option value="capacidad">Capacidad</option>
+          <option value="nombre">Nombre</option>
+        </select>
+        <button id="btn-buscar" class="btn-primary">Aplicar</button>
+      </div>
+
+      <div id="lista-espacios" class="grid"></div>
+      <div class="paginacion">
+        <button id="esp-anterior" class="btn-ghost">Anterior</button>
+        <span id="esp-paginacion-info"></span>
+        <button id="esp-siguiente" class="btn-ghost">Siguiente</button>
+      </div>
+    </section>
+
+    <!-- Reservas -->
+    <section id="page-reservas" class="page">
+      <header class="page-header">
+        <h2>Mis reservas</h2>
+      </header>
+
+      <div class="estadisticas-grid" id="reservas-stats"></div>
+
+      <div class="toolbar">
+        <label style="flex: 1; min-width: 140px;">Sala
+          <select id="filtro-sala">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label style="flex: 1; min-width: 140px;">Estado
+          <select id="filtro-estado">
+            <option value="">Todos</option>
+            <option value="PENDIENTE">Pendiente</option>
+            <option value="CONFIRMADA">Confirmada</option>
+            <option value="COMPLETADA">Completada</option>
+            <option value="CANCELADA">Cancelada</option>
+          </select>
+        </label>
+        <label style="flex: 1; min-width: 140px;">Dia
+          <input type="date" id="filtro-dia">
+        </label>
+        <label style="flex: 1; min-width: 140px;">Duracion
+          <select id="filtro-duracion">
+            <option value="">Cualquiera</option>
+            <option value="1">1 hora</option>
+            <option value="2">2 horas</option>
+            <option value="3">3 horas</option>
+            <option value="4">4 horas</option>
+            <option value="5+">5+ horas</option>
+          </select>
+        </label>
+        <button id="btn-limpiar-filtros" class="btn-ghost" style="align-self: end;">Limpiar</button>
+      </div>
+
+      <div id="lista-reservas" class="lista"></div>
+    </section>
+
+    <!-- Crear Reserva (modal) -->
+    <div id="modal-reserva" class="modal hidden">
+      <div class="modal-content card">
+        <button class="modal-close" id="cerrar-modal-reserva">&times;</button>
+        <h3>Nueva reserva</h3>
+        <div id="espacio-seleccionado" class="espacio-info"></div>
+        <form id="form-reserva">
+          <label>Fecha
+            <input type="date" name="fecha" required>
+          </label>
+
+          <label style="margin-bottom: 0;">Hora de inicio</label>
+          <div id="slots-inicio" class="slots-grid"></div>
+
+          <label>Duracion
+            <select name="duracion" required>
+              <option value="1">1 hora</option>
+              <option value="2">2 horas</option>
+              <option value="3">3 horas</option>
+              <option value="4">4 horas</option>
+              <option value="6">6 horas</option>
+              <option value="8">8 horas</option>
+            </select>
+          </label>
+
+          <label>Prioridad
+            <select name="prioridad">
+              <option value="2">Normal</option>
+              <option value="1">Urgente</option>
+              <option value="3">Flexible</option>
+            </select>
+          </label>
+
+          <label>Notas
+            <textarea name="notas" rows="2"></textarea>
+          </label>
+
+          <div id="resumen-reserva" class="resumen-reserva">Selecciona fecha y hora</div>
+
+          <button type="submit" class="btn-primary">Reservar</button>
+        </form>
+        <div id="reserva-error" class="error"></div>
+      </div>
+    </div>
+
+    <!-- Facturas -->
+    <section id="page-facturas" class="page">
+      <header class="page-header">
+        <h2>Mis facturas</h2>
+      </header>
+
+      <div class="estadisticas-grid" id="facturas-stats"></div>
+
+      <div id="lista-facturas" class="lista"></div>
+    </section>
+
+    <!-- Admin -->
+    <section id="page-admin" class="page">
+      <header class="page-header">
+        <h2>Panel de administracion</h2>
+      </header>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="admin-cola">Cola</button>
+        <button class="tab" data-tab="admin-usuarios">Usuarios</button>
+        <button class="tab" data-tab="admin-espacios">Espacios</button>
+        <button class="tab" data-tab="admin-facturas">Facturas</button>
+        <button class="tab" data-tab="admin-cache">Cache</button>
+      </div>
+
+      <div id="admin-cola" class="tab-content active">
+        <h3>Cola de prioridad</h3>
+        <button id="btn-confirmar-cola" class="btn-primary">Confirmar siguiente</button>
+        <div id="lista-cola" class="lista"></div>
+      </div>
+
+      <div id="admin-usuarios" class="tab-content">
+        <h3>Crear usuario</h3>
+        <form id="form-crear-usuario" class="form-inline">
+          <input name="nombre" placeholder="Nombre" required>
+          <input name="email" type="email" placeholder="Email" required>
+          <input name="password" type="password" placeholder="Contrasena (min 6)" minlength="6" required>
+          <select name="rol" required>
+            <option value="usuario">Usuario</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <button type="submit" class="btn-primary">Crear</button>
+        </form>
+
+        <h3>Usuarios registrados</h3>
+        <div id="lista-usuarios" class="lista"></div>
+      </div>
+
+      <div id="admin-espacios" class="tab-content">
+        <h3>Crear espacio</h3>
+        <form id="form-crear-espacio" class="form-inline">
+          <input name="nombre" placeholder="Nombre" required>
+          <input name="descripcion" placeholder="Descripcion">
+          <input name="capacidad" type="number" placeholder="Capacidad" min="1" required>
+          <input name="precio_por_hora" type="number" step="0.01" placeholder="Precio/h" min="0" required>
+          <button type="submit" class="btn-primary">Crear</button>
+        </form>
+      </div>
+
+      <div id="admin-facturas" class="tab-content">
+        <h3>Reportes</h3>
+        <div class="estadisticas-grid" id="admin-resumen"></div>
+        <h4>Por espacio</h4>
+        <div id="reporte-espacios" class="lista"></div>
+      </div>
+
+      <div id="admin-cache" class="tab-content">
+        <h3>Estadisticas de cache</h3>
+        <button id="btn-cargar-cache" class="btn-primary">Recargar</button>
+        <pre id="cache-output" class="pre-output"></pre>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Modal de confirmacion generico -->
+  <div id="modal-confirmar" class="modal hidden">
+    <div class="modal-content card" style="max-width: 400px;">
+      <h3 id="modal-confirmar-titulo">Confirmar</h3>
+      <p id="modal-confirmar-mensaje" class="sub" style="margin-bottom: 1.5rem;"></p>
+      <div class="modal-acciones">
+        <button id="modal-confirmar-cancelar" class="btn-ghost" type="button">Cancelar</button>
+        <button id="modal-confirmar-aceptar" class="btn-primary" type="button">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/espacios.js"></script>
+  <script src="js/reservas.js"></script>
+  <script src="js/facturas.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

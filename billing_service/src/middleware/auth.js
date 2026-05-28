@@ -2,6 +2,9 @@ const jwt = require('jsonwebtoken');
 
 // Verifica el JWT autocontenido emitido por auth service
 function verificar_jwt(req, res, next) {
+  // Dejar pasar preflight CORS
+  if (req.method === 'OPTIONS') return next();
+
   const header = req.headers['authorization'];
 
   if (!header || !header.startsWith('Bearer ')) {

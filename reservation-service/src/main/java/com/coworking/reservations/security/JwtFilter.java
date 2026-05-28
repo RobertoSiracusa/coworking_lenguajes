@@ -32,6 +32,12 @@ public class JwtFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Dejar pasar preflight CORS
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         String header = request.getHeader("Authorization");
         if (header == null || !header.startsWith("Bearer ")) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -39,8 +45,8 @@ public class JwtFilter extends OncePerRequestFilter {
             return;
         }
 
+        String token = header.substring(7);
         try {
-            String token = header.substring(7);
             Claims claims = Jwts.parserBuilder()
                 .setSigningKey(Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8)))
                 .build()
@@ -50,13 +56,14 @@ public class JwtFilter extends OncePerRequestFilter {
             request.setAttribute("usuario_id", Long.parseLong(claims.getSubject()));
             request.setAttribute("rol", claims.get("rol", String.class));
             request.setAttribute("token", token);
-
-            chain.doFilter(request, response);
-
         } catch (Exception e) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"Token invalido o expirado\"}");
+            return;
         }
+
+        // Fuera del try/catch: errores downstream no se confunden con token invalido
+        chain.doFilter(request, response);
     }
 }

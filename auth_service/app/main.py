@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import PORT
 from app.database import init_db
@@ -21,6 +22,15 @@ app = FastAPI(
     title="Auth Service",
     description="Servicio de Autenticacion — Sistema de Co-working",
     lifespan=lifespan,
+)
+
+# CORS abierto para desarrollo local
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
