@@ -52,10 +52,12 @@ async function cargarFacturas() {
       cont.innerHTML = '<p style="color: var(--gris); text-align: center; padding: 2rem;">No tienes facturas aun</p>';
       return;
     }
-    cont.innerHTML = facturas.map(f => `
+    cont.innerHTML = facturas.map(f => {
+      const estado = String(f.estado || '').trim().toLowerCase();
+      return `
       <div class="lista-item">
         <div class="info">
-          <h4>${escaparHTML(f.nombre_espacio || 'Factura #' + f.id)} <span class="badge badge-${f.estado}">${f.estado}</span></h4>
+          <h4>${escaparHTML(f.nombre_espacio || 'Factura #' + f.id)} <span class="badge badge-${estado}">${estado}</span></h4>
           <p>${formatearFecha(f.fecha_inicio)} - ${formatearFecha(f.fecha_fin)}</p>
           <p style="font-size: 0.85rem; color: var(--gris-2);">
             ${parseFloat(f.horas).toFixed(2)}h x $${parseFloat(f.precio_hora).toFixed(2)} = $${parseFloat(f.subtotal).toFixed(2)}
@@ -64,19 +66,18 @@ async function cargarFacturas() {
         </div>
         <div class="acciones">
           <span class="precio">$${parseFloat(f.total).toFixed(2)}</span>
-          ${f.estado === 'pendiente' ? `<button class="btn-primary" data-pagar="${f.id}" data-total="${f.total}">Pagar</button>` : ''}
+          ${estado === 'pendiente' ? `<button class="btn-primary" data-pagar="${f.id}">Pagar</button>` : ''}
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     cont.querySelectorAll('[data-pagar]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const id = btn.dataset.pagar;
-        const total = parseFloat(btn.dataset.total).toFixed(2);
-        if (!await confirmar(`¿Deseas pagar esta factura por $${total}?`, { titulo: 'Pagar Factura', textoAceptar: 'Pagar' })) return;
+        if (!await confirmar('Pagar esta factura?', { titulo: 'Pagar factura', textoAceptar: 'Pagar' })) return;
         try {
-          await Facturas.pagar(id);
-          toast('Factura pagada con éxito', 'success');
+          await Facturas.pagar(btn.dataset.pagar);
+          toast('Factura pagada', 'success');
           cargarFacturas();
         } catch (err) {
           toast('Error: ' + err.message, 'error');

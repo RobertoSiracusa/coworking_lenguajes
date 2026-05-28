@@ -119,6 +119,7 @@
             <option value="">Todos</option>
             <option value="PENDIENTE">Pendiente</option>
             <option value="CONFIRMADA">Confirmada</option>
+            <option value="PAGADA">Pagada</option>
             <option value="COMPLETADA">Completada</option>
             <option value="CANCELADA">Cancelada</option>
           </select>
@@ -206,6 +207,7 @@
 
       <div class="tabs">
         <button class="tab active" data-tab="admin-cola">Cola</button>
+        <button class="tab" data-tab="admin-reservas">Reservas</button>
         <button class="tab" data-tab="admin-usuarios">Usuarios</button>
         <button class="tab" data-tab="admin-espacios">Espacios</button>
         <button class="tab" data-tab="admin-facturas">Facturas</button>
@@ -235,6 +237,11 @@
         <div id="lista-usuarios" class="lista"></div>
       </div>
 
+      <div id="admin-reservas" class="tab-content">
+        <h3>Gestion de reservas</h3>
+        <div id="admin-lista-reservas" class="lista"></div>
+      </div>
+
       <div id="admin-espacios" class="tab-content">
         <h3>Crear espacio</h3>
         <form id="form-crear-espacio" class="form-inline">
@@ -251,6 +258,8 @@
         <div class="estadisticas-grid" id="admin-resumen"></div>
         <h4>Por espacio</h4>
         <div id="reporte-espacios" class="lista"></div>
+        <h3 style="margin-top: 2rem;">Gestion de facturas</h3>
+        <div id="admin-lista-facturas" class="lista"></div>
       </div>
 
       <div id="admin-cache" class="tab-content">

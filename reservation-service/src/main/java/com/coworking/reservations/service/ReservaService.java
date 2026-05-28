@@ -18,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
@@ -48,7 +49,8 @@ public class ReservaService {
         // Cargar reservas activas en el interval tree
         for (Reserva r : repo.findAll()) {
             if (r.getEstado() == Reserva.EstadoReserva.PENDIENTE
-                    || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA) {
+                    || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA
+                    || r.getEstado() == Reserva.EstadoReserva.PAGADA) {
                 intervalTree.insertar(r);
             }
         }
@@ -72,6 +74,25 @@ public class ReservaService {
         if (minutos <= 0 || minutos % 60 != 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "La duracion debe ser multiplo de 1 hora");
+        }
+    }
+
+    private void actualizarEstructuras(Reserva reserva, Reserva.EstadoReserva nuevoEstado) {
+        Long id = reserva.getId();
+        if (nuevoEstado == Reserva.EstadoReserva.PENDIENTE) {
+            cola.eliminarPorId(id);
+            cola.insertar(reserva);
+        } else {
+            cola.eliminarPorId(id);
+        }
+
+        if (nuevoEstado == Reserva.EstadoReserva.PENDIENTE
+                || nuevoEstado == Reserva.EstadoReserva.CONFIRMADA
+                || nuevoEstado == Reserva.EstadoReserva.PAGADA) {
+            intervalTree.eliminar(id);
+            intervalTree.insertar(reserva);
+        } else {
+            intervalTree.eliminar(id);
         }
     }
 
@@ -173,14 +194,41 @@ public class ReservaService {
         return ReservaResponse.desde(guardada);
     }
 
-    public ReservaResponse confirmarSiguiente() {
-        return cola.extraerMax()
-                .map(r -> {
-                    r.setEstado(Reserva.EstadoReserva.CONFIRMADA);
-                    return ReservaResponse.desde(repo.save(r));
-                })
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "No hay reservas pendientes en la cola"));
+    public ReservaResponse confirmar(Long id, Long usuarioId, boolean esAdmin, String jwt) {
+        Reserva reserva = repo.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
+        if (!esAdmin && !reserva.getUsuarioId().equals(usuarioId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Solo puedes confirmar tus propias reservas");
+        }
+        if (reserva.getEstado() != Reserva.EstadoReserva.PENDIENTE) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Solo se pueden confirmar reservas pendientes");
+        }
+
+        boolean ok = billingClient.generarFactura(reserva, jwt);
+        if (!ok) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "No se pudo generar la factura al confirmar la reserva");
+        }
+
+        reserva.setEstado(Reserva.EstadoReserva.CONFIRMADA);
+        actualizarEstructuras(reserva, Reserva.EstadoReserva.CONFIRMADA);
+        return ReservaResponse.desde(repo.save(reserva));
+    }
+
+    public ReservaResponse confirmarSiguiente(String jwt) {
+        Reserva reserva = cola.extraerMax().orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "No hay reservas pendientes en la cola"));
+        boolean ok = billingClient.generarFactura(reserva, jwt);
+        if (!ok) {
+            cola.insertar(reserva);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "No se pudo generar la factura al confirmar la reserva");
+        }
+        reserva.setEstado(Reserva.EstadoReserva.CONFIRMADA);
+        actualizarEstructuras(reserva, Reserva.EstadoReserva.CONFIRMADA);
+        return ReservaResponse.desde(repo.save(reserva));
     }
 
     // Facturar reserva manualmente (admin o dueño)
@@ -195,6 +243,10 @@ public class ReservaService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "No se puede facturar una reserva cancelada");
         }
+        if (reserva.getEstado() != Reserva.EstadoReserva.CONFIRMADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Solo se pueden facturar reservas confirmadas");
+        }
         boolean ok = billingClient.generarFactura(reserva, jwt);
         if (!ok) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
@@ -206,24 +258,44 @@ public class ReservaService {
         return resp;
     }
 
-    // Marcar como completada (admin) - genera factura automaticamente
-    public ReservaResponse completar(Long id, String jwt) {
+    public ReservaResponse marcarPagada(Long id, Long usuarioId, boolean esAdmin) {
         Reserva reserva = repo.findById(id).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
+        if (!esAdmin && !reserva.getUsuarioId().equals(usuarioId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Solo puedes pagar tus propias reservas");
+        }
+        if (reserva.getEstado() == Reserva.EstadoReserva.PAGADA) {
+            return ReservaResponse.desde(reserva);
+        }
         if (reserva.getEstado() != Reserva.EstadoReserva.CONFIRMADA) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Solo se pueden completar reservas confirmadas");
+                    "Solo se pueden pagar reservas confirmadas");
+        }
+        reserva.setEstado(Reserva.EstadoReserva.PAGADA);
+        actualizarEstructuras(reserva, Reserva.EstadoReserva.PAGADA);
+        return ReservaResponse.desde(repo.save(reserva));
+    }
+
+    // Marcar como completada (admin)
+    public ReservaResponse completar(Long id) {
+        Reserva reserva = repo.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
+        if (reserva.getEstado() != Reserva.EstadoReserva.PAGADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Solo se pueden completar reservas pagadas");
         }
         reserva.setEstado(Reserva.EstadoReserva.COMPLETADA);
-        intervalTree.eliminar(id);
-        Reserva guardada = repo.save(reserva);
+        actualizarEstructuras(reserva, Reserva.EstadoReserva.COMPLETADA);
+        return ReservaResponse.desde(repo.save(reserva));
+    }
 
-        // Trigger automatico: generar factura via billing service
-        boolean ok = billingClient.generarFactura(guardada, jwt);
-        if (!ok) {
-            System.err.println("Reserva " + id + " completada pero factura fallo. Generar manualmente.");
-        }
-        return ReservaResponse.desde(guardada);
+    public ReservaResponse actualizarEstadoAdmin(Long id, Reserva.EstadoReserva nuevoEstado) {
+        Reserva reserva = repo.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
+        reserva.setEstado(nuevoEstado);
+        actualizarEstructuras(reserva, nuevoEstado);
+        return ReservaResponse.desde(repo.save(reserva));
     }
 
     // Pagar reserva (usuario o admin) - cambia estado de PENDIENTE a CONFIRMADA
@@ -332,6 +404,7 @@ public class ReservaService {
         long total = reservas.size();
         long pendientes = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.PENDIENTE).count();
         long confirmadas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.CONFIRMADA).count();
+        long pagadas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.PAGADA).count();
         long completadas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.COMPLETADA).count();
         long canceladas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.CANCELADA).count();
 
@@ -346,6 +419,7 @@ public class ReservaService {
         resp.put("total_reservas", total);
         resp.put("pendientes", pendientes);
         resp.put("confirmadas", confirmadas);
+        resp.put("pagadas", pagadas);
         resp.put("completadas", completadas);
         resp.put("canceladas", canceladas);
         resp.put("horas_totales", Math.round(horasTotales * 100.0) / 100.0);
@@ -370,6 +444,20 @@ public class ReservaService {
         resp.put("total", resultados.size());
         resp.put("resultados", resultados.stream().map(ReservaResponse::desde).collect(Collectors.toList()));
         return resp;
+    }
+
+    @Scheduled(fixedDelayString = "${reservas.autocomplete.delay.ms:60000}")
+    public void completarPagadasPorHora() {
+        LocalDateTime ahora = LocalDateTime.now();
+        List<Reserva> paraCompletar = repo.findByEstadoAndFechaInicioLessThanEqual(
+                Reserva.EstadoReserva.PAGADA, ahora);
+        if (paraCompletar.isEmpty()) return;
+        for (Reserva r : paraCompletar) {
+            r.setEstado(Reserva.EstadoReserva.COMPLETADA);
+            actualizarEstructuras(r, Reserva.EstadoReserva.COMPLETADA);
+            repo.save(r);
+        }
+        System.out.printf("Reservas completadas automaticamente: %d%n", paraCompletar.size());
     }
 
     public Map<String, Object> estadisticasCache() {

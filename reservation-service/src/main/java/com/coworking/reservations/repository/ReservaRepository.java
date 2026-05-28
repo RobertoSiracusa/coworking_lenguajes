@@ -18,6 +18,9 @@ public interface ReservaRepository extends JpaRepository<Reserva, Long>,
 
     List<Reserva> findByEstadoOrderByPrioridadAscCreadoEnAsc(Reserva.EstadoReserva estado);
 
+    List<Reserva> findByEstadoAndFechaInicioLessThanEqual(
+            Reserva.EstadoReserva estado, LocalDateTime fechaInicio);
+
     // Solapamiento simple (fallback si no se usa interval tree)
     @Query("""
         SELECT COUNT(r) > 0 FROM Reserva r

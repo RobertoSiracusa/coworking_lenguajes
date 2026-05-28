@@ -1,6 +1,6 @@
 # Billing Service
 
-Servicio de Facturacion y Reportes del sistema de Co-working. Genera facturas a partir de reservas completadas, gestiona estados de pago y produce reportes financieros para administradores.
+Servicio de Facturacion y Reportes del sistema de Co-working. Genera facturas a partir de reservas confirmadas, gestiona estados de pago y produce reportes financieros para administradores.
 
 ## Descripcion
 
@@ -41,6 +41,7 @@ Copiar `.env.example` a `.env` y ajustar segun el entorno:
 | `DATABASE_URL` | Cadena de conexion a PostgreSQL | `postgresql://coworking_user:coworking_pass@db:5432/billingdb` |
 | `SECRET_KEY` | Clave compartida con el Auth Service para verificar JWT | (requerido) |
 | `AUTH_SERVICE_URL` | URL base del Auth Service | `http://auth-service:8001` |
+| `RESERVATION_SERVICE_URL` | URL base del Reservation Service | `http://reservation-service:8003` |
 
 La `SECRET_KEY` debe ser exactamente la misma que usa el Auth Service para firmar los tokens. De lo contrario la verificacion fallara.
 
@@ -72,14 +73,14 @@ Todos los endpoints excepto `/health` requieren un JWT valido en el header `Auth
 | Metodo | Ruta | Acceso | Descripcion |
 |--------|------|--------|-------------|
 | GET | `/health` | Publico | Verifica que el servicio este activo |
-| POST | `/facturas` | Admin | Crea una factura. Valida que el usuario exista en Auth Service |
+| POST | `/facturas` | Usuario / Admin | Crea una factura. Valida que el usuario exista en Auth Service |
 | GET | `/facturas` | Admin | Lista todas las facturas con filtros, paginacion y datos enriquecidos |
 | GET | `/facturas/mis-facturas` | Usuario | Lista las facturas del usuario autenticado con filtros y paginacion |
 | GET | `/facturas/mis-estadisticas` | Usuario | Resumen personal del usuario autenticado |
 | GET | `/facturas/buscar-fecha` | Admin | Busca facturas en una fecha. Acepta `algoritmo=lineal` o `algoritmo=binaria` |
 | GET | `/facturas/:id` | Usuario / Admin | Detalle de una factura (el usuario solo ve las suyas) |
 | PUT | `/facturas/:id` | Admin | Edita campos de una factura |
-| PATCH | `/facturas/:id/pagar` | Admin | Marca la factura como pagada |
+| PATCH | `/facturas/:id/pagar` | Usuario / Admin | Marca la factura como pagada y notifica al Reservation Service |
 | PATCH | `/facturas/:id/cancelar` | Admin | Marca la factura como cancelada |
 | DELETE | `/facturas/:id` | Admin | Elimina fisicamente una factura |
 | GET | `/reportes/resumen` | Admin | Dashboard con totales generales |
@@ -124,7 +125,8 @@ billing_service/
     ├── estructuras/
     │   └── cache_lru.js        Implementacion desde cero del Cache LRU
     └── servicios/
-        └── auth_client.js      Cliente HTTP para el Auth Service
+        ├── auth_client.js      Cliente HTTP para el Auth Service
+        └── reservation_client.js  Cliente HTTP para el Reservation Service
 ```
 
 ## Algoritmos y Estructuras de Datos
@@ -175,6 +177,10 @@ El Billing Service se comunica con el Auth Service via HTTP para dos casos:
 2. **Enriquecimiento de listados**: al listar facturas como admin, agrega los campos `usuario_nombre` y `usuario_email` consultando al Auth Service. Los datos se cachean en el LRU para minimizar llamadas HTTP.
 
 El JWT del usuario autenticado se reenvia al Auth Service en cada llamada (`Authorization: Bearer <token>`). Como `GET /usuarios` en el Auth Service requiere rol admin, esta integracion funciona cuando un administrador realiza la operacion.
+
+## Integracion con Reservation Service
+
+Al marcar una factura como pagada, el Billing Service notifica al Reservation Service para actualizar el estado de la reserva a `PAGADA`. Esta llamada se realiza con el mismo JWT del usuario que pago la factura.
 
 ## Modelo de Datos
 

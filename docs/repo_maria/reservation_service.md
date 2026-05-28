@@ -114,9 +114,12 @@ Clase `@Configuration` que registra `JwtFilter` como `FilterRegistrationBean` ap
 |--------|------|--------|-------------|
 | `GET /health` | Público | Health check del servicio. |
 | `POST /reservas` | Usuario | Crea reserva. El `usuarioId` se obtiene del JWT (no del body). |
+| `POST /reservas/{id}/confirmar` | Usuario/Admin | Confirma una reserva pendiente y genera factura. |
 | `GET /reservas/mis-reservas` | Usuario | Lista reservas del usuario autenticado. |
+| `PATCH /reservas/{id}/pagar` | Usuario/Admin | Marca reserva como PAGADA (pago confirmado). |
 | `DELETE /reservas/{id}` | Usuario/Admin | Cancela reserva. Usuarios solo pueden cancelar las suyas. |
 | `GET /reservas` | Admin | Lista todas las reservas. |
+| `PATCH /reservas/{id}/estado` | Admin | Cambia estado directamente (PENDIENTE/CONFIRMADA/PAGADA/COMPLETADA/CANCELADA). |
 | `GET /cola` | Admin | Estado de la cola de prioridad: total, siguiente, lista ordenada. |
 | `POST /cola/confirmar` | Admin | Confirma la siguiente reserva de mayor prioridad (extrae del heap). |
 
@@ -142,7 +145,7 @@ Entidad mapeada a tabla `reservas`. Campos:
 - `id` (IDENTITY, auto-generado)
 - `usuarioId`, `espacioId`, `nombreEspacio`
 - `fechaInicio`, `fechaFin`
-- `estado` (enum `EstadoReserva`: PENDIENTE, CONFIRMADA, CANCELADA, COMPLETADA)
+- `estado` (enum `EstadoReserva`: PENDIENTE, CONFIRMADA, PAGADA, CANCELADA, COMPLETADA)
 - `prioridad` (1=URGENTE, 2=NORMAL, 3=FLEXIBLE, default 2)
 - `creadoEn`, `notas`
 
@@ -174,7 +177,9 @@ Extiende `OncePerRequestFilter`. Flujo:
 |--------|-------------|
 | `inicializarCola()` | `@PostConstruct`: al arrancar, reconstruye la cola de prioridad con reservas PENDIENTES de la BD. La cola sobrevive reinicios. |
 | `crear(ReservaRequest, Long)` | Valida fechas, verifica conflictos de horario, guarda en BD, inserta en la cola — O(log n). |
-| `confirmarSiguiente()` | Extrae la reserva de mayor prioridad de la cola — O(log n). Cambia estado a CONFIRMADA. |
+| `confirmar(id)` | Confirma una reserva pendiente y genera factura. |
+| `confirmarSiguiente()` | Extrae la reserva de mayor prioridad de la cola — O(log n). Cambia estado a CONFIRMADA y genera factura. |
+| `completarPagadasPorHora()` | Tarea programada: marca como COMPLETADA las reservas PAGADAS cuya hora de inicio ya ocurrió. |
 | `estadoCola()` | Retorna mapa con: total en cola, siguiente reserva, lista completa ordenada. |
 | `misReservas(Long)` | Lista reservas de un usuario. |
 | `cancelar(Long, Long, boolean)` | Cancela reserva. Usuarios solo pueden cancelar las suyas, admin cualquiera. |
@@ -190,7 +195,7 @@ reservas
 ├── nombre_espacio  VARCHAR
 ├── fecha_inicio    TIMESTAMP NOT NULL
 ├── fecha_fin       TIMESTAMP NOT NULL
-├── estado          VARCHAR NOT NULL (PENDIENTE | CONFIRMADA | CANCELADA | COMPLETADA)
+├── estado          VARCHAR NOT NULL (PENDIENTE | CONFIRMADA | PAGADA | CANCELADA | COMPLETADA)
 ├── prioridad       INTEGER NOT NULL (1=URGENTE, 2=NORMAL, 3=FLEXIBLE)
 ├── creado_en       TIMESTAMP
 └── notas           VARCHAR
@@ -199,5 +204,5 @@ reservas
 ## Comunicación con Otros Microservicios
 
 - Comparte `SECRET_KEY` con el **Auth Service** para verificar tokens JWT sin llamadas inter-servicio.
-- Los datos de reservas completadas son enviados al **Billing Service** para generar facturas.
+- Las facturas se generan al confirmar la reserva; el **Billing Service** notifica el pago para marcar la reserva como PAGADA.
 - Referencia `espacio_id` y `nombre_espacio` del **Space Service** (almacena copia local, no consulta en tiempo real).

@@ -20,8 +20,8 @@ const Reservas = {
     return fetchAPI(`${API.reservation}/reservas/${id}`, { method: 'DELETE' });
   },
 
-  async facturar(id) {
-    return fetchAPI(`${API.reservation}/reservas/${id}/facturar`, { method: 'POST' });
+  async confirmar(id) {
+    return fetchAPI(`${API.reservation}/reservas/${id}/confirmar`, { method: 'POST' });
   },
 };
 
@@ -288,7 +288,7 @@ function renderReservas() {
     const subtotal = horas * precioH;
     const total = subtotal * 1.16; // con IVA 16%
     const puedeCancelar = ['PENDIENTE', 'CONFIRMADA'].includes(r.estado);
-    const puedeFacturar = r.estado !== 'CANCELADA';
+    const puedeConfirmar = r.estado === 'PENDIENTE';
     return `
     <div class="lista-item">
       <div class="info">
@@ -302,7 +302,7 @@ function renderReservas() {
         <p style="font-size: 0.8rem; color: var(--gris-2);">Prioridad: ${r.prioridadNombre || 'NORMAL'}</p>
       </div>
       <div class="acciones">
-        ${puedeFacturar ? `<button class="btn-primary" data-facturar="${r.id}">Facturar</button>` : ''}
+        ${puedeConfirmar ? `<button class="btn-primary" data-confirmar="${r.id}">Confirmar</button>` : ''}
         ${puedeCancelar ? `<button class="btn-danger" data-cancelar="${r.id}">Cancelar</button>` : ''}
       </div>
     </div>
@@ -321,12 +321,13 @@ function renderReservas() {
     });
   });
 
-  cont.querySelectorAll('[data-facturar]').forEach(btn => {
+  cont.querySelectorAll('[data-confirmar]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!await confirmar('Generar factura para esta reserva?', { titulo: 'Generar factura', textoAceptar: 'Facturar' })) return;
+      if (!await confirmar('Confirmar esta reserva y generar factura?', { titulo: 'Confirmar reserva', textoAceptar: 'Confirmar' })) return;
       try {
-        await Reservas.facturar(btn.dataset.facturar);
-        toast('Factura generada', 'success');
+        await Reservas.confirmar(btn.dataset.confirmar);
+        toast('Reserva confirmada. Factura generada.', 'success');
+        cargarReservas();
       } catch (err) {
         toast('Error: ' + err.message, 'error');
       }
@@ -366,6 +367,10 @@ async function cargarReservas() {
         <div class="stat-card">
           <div class="valor">${stats.confirmadas}</div>
           <div class="etiqueta">Confirmadas</div>
+        </div>
+        <div class="stat-card">
+          <div class="valor">${stats.pagadas}</div>
+          <div class="etiqueta">Pagadas</div>
         </div>
         <div class="stat-card">
           <div class="valor">${stats.completadas}</div>

@@ -9,8 +9,16 @@ const Admin = {
     return fetchAPI(`${API.reservation}/cola/confirmar`, { method: 'POST' });
   },
 
-  async listarReservasConfirmadas() {
-    return fetchAPI(`${API.reservation}/reservas?estado=CONFIRMADA&por_pagina=50`);
+  async listarReservas(estado) {
+    const qs = estado ? `?estado=${estado}&por_pagina=100` : '?por_pagina=100';
+    return fetchAPI(`${API.reservation}/reservas${qs}`);
+  },
+
+  async actualizarEstadoReserva(id, estado) {
+    return fetchAPI(`${API.reservation}/reservas/${id}/estado`, {
+      method: 'PATCH',
+      body: JSON.stringify({ estado }),
+    });
   },
 
   async completarReserva(id) {
@@ -30,6 +38,17 @@ const Admin = {
 
   async reportePorEspacio() {
     return fetchAPI(`${API.billing}/reportes/por-espacio`);
+  },
+
+  async listarFacturas() {
+    return fetchAPI(`${API.billing}/facturas?por_pagina=100`);
+  },
+
+  async actualizarEstadoFactura(id, estado) {
+    return fetchAPI(`${API.billing}/facturas/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ estado }),
+    });
   },
 
   async cacheAuth() {
@@ -85,6 +104,7 @@ document.querySelectorAll('.tab').forEach(t => {
 
 async function cargarTabAdmin(tabId) {
   if (tabId === 'admin-cola') return cargarCola();
+  if (tabId === 'admin-reservas') return cargarReservasAdmin();
   if (tabId === 'admin-usuarios') return cargarUsuariosAdmin();
   if (tabId === 'admin-facturas') return cargarReporteAdmin();
   if (tabId === 'admin-cache') return cargarCache();
@@ -171,13 +191,13 @@ document.getElementById('form-crear-usuario').addEventListener('submit', async (
 
 async function cargarCola() {
   try {
-    const [datos, confirmadas] = await Promise.all([
+    const [datos, pagadasResp] = await Promise.all([
       Admin.cola(),
-      Admin.listarReservasConfirmadas().catch(() => ({ datos: [] })),
+      Admin.listarReservas('PAGADA').catch(() => ({ datos: [] })),
     ]);
     const cont = document.getElementById('lista-cola');
     const pendientes = datos.reservas || [];
-    const reservasConf = confirmadas.datos || [];
+    const reservasPagadas = pagadasResp.datos || [];
 
     let html = `<h4 style="margin-top: 0;">Pendientes (cola): ${datos.total_en_cola}</h4>`;
     if (pendientes.length === 0) {
@@ -194,14 +214,14 @@ async function cargarCola() {
       `).join('');
     }
 
-    html += `<h4>Confirmadas (listas para completar): ${reservasConf.length}</h4>`;
-    if (reservasConf.length === 0) {
-      html += '<p style="color: var(--gris); padding: 0.5rem;">Ninguna confirmada</p>';
+    html += `<h4>Pagadas (listas para completar): ${reservasPagadas.length}</h4>`;
+    if (reservasPagadas.length === 0) {
+      html += '<p style="color: var(--gris); padding: 0.5rem;">Ninguna pagada</p>';
     } else {
-      html += reservasConf.map(r => `
+      html += reservasPagadas.map(r => `
         <div class="lista-item">
           <div class="info">
-            <h4>${escaparHTML(r.nombreEspacio || 'Espacio')} <span class="badge badge-confirmada">CONFIRMADA</span></h4>
+            <h4>${escaparHTML(r.nombreEspacio || 'Espacio')} <span class="badge badge-pagada">PAGADA</span></h4>
             <p>${formatearFecha(r.fechaInicio)} - ${formatearFecha(r.fechaFin)}</p>
             <p style="font-size: 0.8rem; color: var(--gris-2);">
               Usuario: ${escaparHTML(r.usuarioNombre || r.usuarioId)}
@@ -209,7 +229,7 @@ async function cargarCola() {
             </p>
           </div>
           <div class="acciones">
-            <button class="btn-primary" data-completar="${r.id}">Completar y facturar</button>
+            <button class="btn-primary" data-completar="${r.id}">Completar</button>
           </div>
         </div>
       `).join('');
@@ -219,11 +239,61 @@ async function cargarCola() {
 
     cont.querySelectorAll('[data-completar]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!await confirmar('Completar reserva y generar factura?', { titulo: 'Completar reserva', textoAceptar: 'Completar' })) return;
+        if (!await confirmar('Completar esta reserva?', { titulo: 'Completar reserva', textoAceptar: 'Completar' })) return;
         try {
           await Admin.completarReserva(btn.dataset.completar);
-          toast('Reserva completada. Factura generada.', 'success');
+          toast('Reserva completada.', 'success');
           cargarCola();
+        } catch (err) {
+          toast('Error: ' + err.message, 'error');
+        }
+      });
+    });
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function cargarReservasAdmin() {
+  try {
+    const resp = await Admin.listarReservas();
+    const reservas = resp.datos || [];
+    const cont = document.getElementById('admin-lista-reservas');
+    if (reservas.length === 0) {
+      cont.innerHTML = '<p style="color: var(--gris); padding: 0.5rem;">No hay reservas</p>';
+      return;
+    }
+    cont.innerHTML = reservas.map(r => `
+      <div class="lista-item">
+        <div class="info">
+          <h4>${escaparHTML(r.nombreEspacio || 'Espacio')} <span class="badge badge-${r.estado.toLowerCase()}">${r.estado}</span></h4>
+          <p>${formatearFecha(r.fechaInicio)} - ${formatearFecha(r.fechaFin)}</p>
+          <p style="font-size: 0.8rem; color: var(--gris-2);">
+            Usuario: ${escaparHTML(r.usuarioNombre || r.usuarioId)}
+            ${r.precioHora ? `- $${parseFloat(r.precioHora).toFixed(2)}/h` : ''}
+          </p>
+        </div>
+        <div class="acciones">
+          <select data-estado-reserva="${r.id}">
+            <option value="PENDIENTE" ${r.estado === 'PENDIENTE' ? 'selected' : ''}>PENDIENTE</option>
+            <option value="CONFIRMADA" ${r.estado === 'CONFIRMADA' ? 'selected' : ''}>CONFIRMADA</option>
+            <option value="PAGADA" ${r.estado === 'PAGADA' ? 'selected' : ''}>PAGADA</option>
+            <option value="COMPLETADA" ${r.estado === 'COMPLETADA' ? 'selected' : ''}>COMPLETADA</option>
+            <option value="CANCELADA" ${r.estado === 'CANCELADA' ? 'selected' : ''}>CANCELADA</option>
+          </select>
+          <button class="btn-primary" data-guardar-reserva="${r.id}">Guardar</button>
+        </div>
+      </div>
+    `).join('');
+
+    cont.querySelectorAll('[data-guardar-reserva]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.guardarReserva;
+        const sel = cont.querySelector(`[data-estado-reserva="${id}"]`);
+        try {
+          await Admin.actualizarEstadoReserva(id, sel.value);
+          toast('Estado de reserva actualizado', 'success');
+          cargarReservasAdmin();
         } catch (err) {
           toast('Error: ' + err.message, 'error');
         }
@@ -299,9 +369,56 @@ async function cargarReporteAdmin() {
         </div>
       </div>
     `).join('');
+    await cargarFacturasAdmin();
   } catch (err) {
     toast('Error: ' + err.message, 'error');
   }
+}
+
+async function cargarFacturasAdmin() {
+  const cont = document.getElementById('admin-lista-facturas');
+  cont.innerHTML = '';
+  const resp = await Admin.listarFacturas();
+  const facturas = resp.facturas || resp || [];
+  if (facturas.length === 0) {
+    cont.innerHTML = '<p style="color: var(--gris); padding: 0.5rem;">No hay facturas</p>';
+    return;
+  }
+  cont.innerHTML = facturas.map(f => {
+    const estado = String(f.estado || '').trim().toLowerCase();
+    return `
+    <div class="lista-item">
+      <div class="info">
+        <h4>${escaparHTML(f.nombre_espacio || 'Factura #' + f.id)} <span class="badge badge-${estado}">${estado}</span></h4>
+        <p>${formatearFecha(f.fecha_inicio)} - ${formatearFecha(f.fecha_fin)}</p>
+        <p style="font-size: 0.8rem; color: var(--gris-2);">
+          Usuario: ${escaparHTML(f.usuario_nombre || f.usuario_id)} - Reserva: ${f.reserva_id}
+        </p>
+      </div>
+      <div class="acciones">
+        <select data-estado-factura="${f.id}">
+          <option value="pendiente" ${estado === 'pendiente' ? 'selected' : ''}>pendiente</option>
+          <option value="pagada" ${estado === 'pagada' ? 'selected' : ''}>pagada</option>
+          <option value="cancelada" ${estado === 'cancelada' ? 'selected' : ''}>cancelada</option>
+        </select>
+        <button class="btn-primary" data-guardar-factura="${f.id}">Guardar</button>
+      </div>
+    </div>
+  `;}).join('');
+
+  cont.querySelectorAll('[data-guardar-factura]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.guardarFactura;
+      const sel = cont.querySelector(`[data-estado-factura="${id}"]`);
+      try {
+        await Admin.actualizarEstadoFactura(id, sel.value);
+        toast('Estado de factura actualizado', 'success');
+        cargarFacturasAdmin();
+      } catch (err) {
+        toast('Error: ' + err.message, 'error');
+      }
+    });
+  });
 }
 
 async function cargarCache() {

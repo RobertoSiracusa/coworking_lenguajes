@@ -5,9 +5,7 @@ const { solo_admin } = require('../middleware/auth');
 const { calcular_factura, ordenar_facturas } = require('../algorithm/reportes');
 const { busqueda_lineal, busqueda_binaria }  = require('../algorithm/busqueda');
 const { validar_usuario_existe, enriquecer_facturas } = require('../servicios/auth_client');
-const axios = require('axios');
-
-const RESERVATION_URL = process.env.RESERVATION_SERVICE_URL || 'http://reservation-service:8003';
+const { marcar_reserva_pagada } = require('../servicios/reservation_client');
 
 // Construir WHERE dinamico con filtros
 function _construir_filtros(base_params, { estado, desde, hasta }) {
@@ -191,6 +189,12 @@ router.get('/', solo_admin, async (req, res) => {
 
 // PUT /facturas/:id - editar campos de una factura
 router.put('/:id', solo_admin, async (req, res) => {
+  const actual = await pool.query('SELECT * FROM facturas WHERE id = $1', [req.params.id]);
+  if (actual.rows.length === 0) {
+    return res.status(404).json({ error: 'Factura no encontrada' });
+  }
+  const estadoAnterior = actual.rows[0].estado;
+
   const campos_validos = [
     'nombre_espacio', 'fecha_inicio', 'fecha_fin',
     'horas', 'precio_hora', 'subtotal', 'impuesto', 'total', 'estado',
@@ -218,49 +222,51 @@ router.put('/:id', solo_admin, async (req, res) => {
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'Factura no encontrada' });
   }
-  res.json(result.rows[0]);
+  const factura = result.rows[0];
+  if (req.body.estado === 'pagada' && estadoAnterior !== 'pagada') {
+    const ok = await marcar_reserva_pagada(factura.reserva_id, req.token);
+    if (!ok) {
+      await pool.query(
+        'UPDATE facturas SET estado = $1 WHERE id = $2',
+        [estadoAnterior, factura.id],
+      ).catch(() => {});
+      return res.status(502).json({ error: 'No se pudo actualizar la reserva como pagada' });
+    }
+  }
+  res.json(factura);
 });
 
-// PATCH /facturas/:id/pagar - marcar como pagada (usuario o admin)
+// PATCH /facturas/:id/pagar - marcar como pagada
 router.patch('/:id/pagar', async (req, res) => {
-  try {
-    // 1. Obtener la factura para verificar pertenencia
-    const check = await pool.query('SELECT * FROM facturas WHERE id = $1', [req.params.id]);
-    if (check.rows.length === 0) {
-      return res.status(404).json({ error: 'Factura no encontrada' });
-    }
-    const factura = check.rows[0];
-
-    // 2. Permitir si es admin o dueño de la factura
-    if (req.rol !== 'admin' && factura.usuario_id !== req.usuario_id) {
-      return res.status(403).json({ error: 'Solo el dueño de la factura o un administrador pueden pagarla' });
-    }
-
-    // 3. Actualizar estado de la factura a 'pagada'
-    const result = await pool.query(
-      `UPDATE facturas SET estado = 'pagada' WHERE id = $1 RETURNING *`,
-      [req.params.id],
-    );
-    const facturaActualizada = result.rows[0];
-
-    // 4. Llamar al reservation-service para actualizar el estado de la reserva
-    try {
-      await axios.patch(
-        `${RESERVATION_URL}/reservas/${factura.reserva_id}/pagar`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${req.token}` },
-          timeout: 4000
-        }
-      );
-    } catch (err) {
-      console.error('Error al actualizar la reserva en reservation-service:', err.message);
-    }
-
-    res.json(facturaActualizada);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  const result = await pool.query('SELECT * FROM facturas WHERE id = $1', [req.params.id]);
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'Factura no encontrada' });
   }
+  const factura = result.rows[0];
+  const esAdmin = req.rol === 'admin';
+  const esPropia = factura.usuario_id === req.usuario_id;
+  if (!esAdmin && !esPropia) {
+    return res.status(403).json({ error: 'No tienes permiso para pagar esta factura' });
+  }
+  if (factura.estado !== 'pendiente') {
+    return res.status(409).json({ error: 'Solo se pueden pagar facturas pendientes' });
+  }
+
+  const actualizado = await pool.query(
+    `UPDATE facturas SET estado = 'pagada' WHERE id = $1 RETURNING *`,
+    [req.params.id],
+  );
+  const facturaPagada = actualizado.rows[0];
+
+  const ok = await marcar_reserva_pagada(facturaPagada.reserva_id, req.token);
+  if (!ok) {
+    await pool.query(
+      'UPDATE facturas SET estado = $1 WHERE id = $2',
+      [factura.estado, facturaPagada.id],
+    ).catch(() => {});
+    return res.status(502).json({ error: 'No se pudo actualizar la reserva como pagada' });
+  }
+  res.json(facturaPagada);
 });
 
 // PATCH /facturas/:id/cancelar - marcar como cancelada
