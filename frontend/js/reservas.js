@@ -31,6 +31,16 @@ const HORARIO_FIN    = 22;  // 22:00 (ultima franja: 21:30 + 30min)
 
 let espacioSeleccionado = null;
 let slotSeleccionado = null;  // string "HH:MM"
+let reservasEspacio = [];
+
+// Parsear string ISO de fecha local YYYY-MM-DDTHH:MM:SS a Date local de forma robusta
+function parsearFechaLocal(isoStr) {
+  if (!isoStr) return new Date();
+  const [fecha, hora] = isoStr.split('T');
+  const [year, month, day] = fecha.split('-').map(Number);
+  const [h, m] = hora.split(':').map(Number);
+  return new Date(year, month - 1, day, h, m, 0, 0);
+}
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -57,9 +67,10 @@ function aIsoLocal(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
 }
 
-function abrirModalReserva(espacio) {
+async function abrirModalReserva(espacio) {
   espacioSeleccionado = espacio;
   slotSeleccionado = null;
+  reservasEspacio = [];
   document.getElementById('espacio-seleccionado').innerHTML = `
     <strong>${escaparHTML(espacio.nombre)}</strong><br>
     <span style="color: var(--gris); font-size: 0.9rem;">
@@ -80,6 +91,17 @@ function abrirModalReserva(espacio) {
 
   renderSlots();
   actualizarResumen();
+
+  try {
+    const res = await fetchAPI(`${API.reservation}/reservas/espacio/${espacio.id}`);
+    if (Array.isArray(res)) {
+      reservasEspacio = res;
+    }
+  } catch (err) {
+    console.error("Error al obtener reservas del espacio:", err);
+  }
+
+  renderSlots();
 }
 
 // Renderizar grid de slots para la fecha actual
@@ -94,7 +116,20 @@ function renderSlots() {
   cont.innerHTML = slots.map(hora => {
     const slotDate = combinarFechaHora(fechaStr, hora);
     const esPasado = slotDate <= ahora;
-    return `<div class="slot ${esPasado ? 'deshabilitado' : ''}" data-hora="${hora}">${hora}</div>`;
+
+    // Calcular el fin de esta franja de 30 minutos
+    const slotFin = new Date(slotDate.getTime() + 30 * 60 * 1000);
+
+    // Determinar si solapa con alguna reserva activa/pendiente del espacio
+    const esOcupado = reservasEspacio.some(r => {
+      const rInicio = parsearFechaLocal(r.fechaInicio);
+      const rFin = parsearFechaLocal(r.fechaFin);
+      return rInicio < slotFin && rFin > slotDate;
+    });
+
+    const deshabilitado = esPasado || esOcupado;
+
+    return `<div class="slot ${deshabilitado ? 'deshabilitado' : ''}" data-hora="${hora}">${hora}</div>`;
   }).join('');
 
   cont.querySelectorAll('.slot').forEach(s => {

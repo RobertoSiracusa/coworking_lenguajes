@@ -52,8 +52,11 @@ public class ColaPrioridad {
     public boolean eliminarPorId(Long id) {
         for (int i = 0; i < heap.size(); i++) {
             if (heap.get(i).getId().equals(id)) {
-                heap.set(i, heap.remove(heap.size() - 1));
-                if (i < heap.size()) {
+                if (i == heap.size() - 1) {
+                    heap.remove(i);
+                } else {
+                    Reserva ultimo = heap.remove(heap.size() - 1);
+                    heap.set(i, ultimo);
                     bajarDesde(i);
                     subirDesde(i);
                 }

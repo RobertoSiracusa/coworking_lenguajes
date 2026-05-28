@@ -5,6 +5,9 @@ const { solo_admin } = require('../middleware/auth');
 const { calcular_factura, ordenar_facturas } = require('../algorithm/reportes');
 const { busqueda_lineal, busqueda_binaria }  = require('../algorithm/busqueda');
 const { validar_usuario_existe, enriquecer_facturas } = require('../servicios/auth_client');
+const axios = require('axios');
+
+const RESERVATION_URL = process.env.RESERVATION_SERVICE_URL || 'http://reservation-service:8003';
 
 // Construir WHERE dinamico con filtros
 function _construir_filtros(base_params, { estado, desde, hasta }) {
@@ -218,16 +221,46 @@ router.put('/:id', solo_admin, async (req, res) => {
   res.json(result.rows[0]);
 });
 
-// PATCH /facturas/:id/pagar - marcar como pagada
-router.patch('/:id/pagar', solo_admin, async (req, res) => {
-  const result = await pool.query(
-    `UPDATE facturas SET estado = 'pagada' WHERE id = $1 RETURNING *`,
-    [req.params.id],
-  );
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Factura no encontrada' });
+// PATCH /facturas/:id/pagar - marcar como pagada (usuario o admin)
+router.patch('/:id/pagar', async (req, res) => {
+  try {
+    // 1. Obtener la factura para verificar pertenencia
+    const check = await pool.query('SELECT * FROM facturas WHERE id = $1', [req.params.id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Factura no encontrada' });
+    }
+    const factura = check.rows[0];
+
+    // 2. Permitir si es admin o dueño de la factura
+    if (req.rol !== 'admin' && factura.usuario_id !== req.usuario_id) {
+      return res.status(403).json({ error: 'Solo el dueño de la factura o un administrador pueden pagarla' });
+    }
+
+    // 3. Actualizar estado de la factura a 'pagada'
+    const result = await pool.query(
+      `UPDATE facturas SET estado = 'pagada' WHERE id = $1 RETURNING *`,
+      [req.params.id],
+    );
+    const facturaActualizada = result.rows[0];
+
+    // 4. Llamar al reservation-service para actualizar el estado de la reserva
+    try {
+      await axios.patch(
+        `${RESERVATION_URL}/reservas/${factura.reserva_id}/pagar`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${req.token}` },
+          timeout: 4000
+        }
+      );
+    } catch (err) {
+      console.error('Error al actualizar la reserva en reservation-service:', err.message);
+    }
+
+    res.json(facturaActualizada);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  res.json(result.rows[0]);
 });
 
 // PATCH /facturas/:id/cancelar - marcar como cancelada

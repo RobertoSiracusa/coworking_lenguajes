@@ -8,6 +8,10 @@ const Facturas = {
   async misEstadisticas() {
     return fetchAPI(`${API.billing}/facturas/mis-estadisticas`);
   },
+
+  async pagar(id) {
+    return fetchAPI(`${API.billing}/facturas/${id}/pagar`, { method: 'PATCH' });
+  },
 };
 
 async function cargarFacturas() {
@@ -60,9 +64,25 @@ async function cargarFacturas() {
         </div>
         <div class="acciones">
           <span class="precio">$${parseFloat(f.total).toFixed(2)}</span>
+          ${f.estado === 'pendiente' ? `<button class="btn-primary" data-pagar="${f.id}" data-total="${f.total}">Pagar</button>` : ''}
         </div>
       </div>
     `).join('');
+
+    cont.querySelectorAll('[data-pagar]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.pagar;
+        const total = parseFloat(btn.dataset.total).toFixed(2);
+        if (!await confirmar(`¿Deseas pagar esta factura por $${total}?`, { titulo: 'Pagar Factura', textoAceptar: 'Pagar' })) return;
+        try {
+          await Facturas.pagar(id);
+          toast('Factura pagada con éxito', 'success');
+          cargarFacturas();
+        } catch (err) {
+          toast('Error: ' + err.message, 'error');
+        }
+      });
+    });
 
   } catch (err) {
     toast('Error al cargar facturas: ' + err.message, 'error');

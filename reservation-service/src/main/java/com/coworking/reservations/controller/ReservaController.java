@@ -99,6 +99,20 @@ public class ReservaController {
         return service.completar(id, token);
     }
 
+    // PATCH /reservas/{id}/pagar - pagar reserva (cambia de PENDIENTE a CONFIRMADA)
+    @PatchMapping("/reservas/{id}/pagar")
+    public ReservaResponse pagar(@PathVariable Long id, HttpServletRequest httpReq) {
+        Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
+        String rol = (String) httpReq.getAttribute("rol");
+        return service.pagar(id, usuarioId, "admin".equals(rol));
+    }
+
+    // GET /reservas/espacio/{espacioId} - obtener reservas de un espacio (para deshabilitar slots)
+    @GetMapping("/reservas/espacio/{espacioId}")
+    public List<ReservaResponse> reservasPorEspacio(@PathVariable Long espacioId) {
+        return service.reservasPorEspacio(espacioId);
+    }
+
     // GET /reservas - listar con filtros y paginacion (admin)
     @GetMapping("/reservas")
     public PaginadoResponse<ReservaResponse> listar(

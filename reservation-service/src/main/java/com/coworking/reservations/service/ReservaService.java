@@ -226,6 +226,31 @@ public class ReservaService {
         return ReservaResponse.desde(guardada);
     }
 
+    // Pagar reserva (usuario o admin) - cambia estado de PENDIENTE a CONFIRMADA
+    public ReservaResponse pagar(Long id, Long usuarioId, boolean esAdmin) {
+        Reserva reserva = repo.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
+
+        if (!esAdmin && !reserva.getUsuarioId().equals(usuarioId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Solo puedes pagar tus propias reservas");
+        }
+
+        if (reserva.getEstado() == Reserva.EstadoReserva.CANCELADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "No se puede pagar una reserva cancelada");
+        }
+
+        if (reserva.getEstado() == Reserva.EstadoReserva.CONFIRMADA || reserva.getEstado() == Reserva.EstadoReserva.COMPLETADA) {
+            return ReservaResponse.desde(reserva);
+        }
+
+        reserva.setEstado(Reserva.EstadoReserva.CONFIRMADA);
+        cola.eliminarPorId(id);
+
+        return ReservaResponse.desde(repo.save(reserva));
+    }
+
     public Map<String, Object> estadoCola() {
         List<Reserva> enCola = cola.verCola();
         Map<String, Object> resp = new HashMap<>();
@@ -354,5 +379,12 @@ public class ReservaService {
         resp.put("interval_tree_size", intervalTree.tamanio());
         resp.put("cola_size", cola.tamanio());
         return resp;
+    }
+
+    public List<ReservaResponse> reservasPorEspacio(Long espacioId) {
+        return repo.findByEspacioIdOrderByFechaInicio(espacioId).stream()
+                .filter(r -> r.getEstado() == Reserva.EstadoReserva.PENDIENTE || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA)
+                .map(ReservaResponse::desde)
+                .collect(Collectors.toList());
     }
 }
