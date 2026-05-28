@@ -173,23 +173,30 @@ Gestiona el ciclo de vida completo de las reservas: creación, validación de co
 ### 5.2 Ciclo de vida de una reserva
 
 ```
-                    ┌──────────┐
-     POST /reservas │          │
-    ───────────────►│ PENDIENTE│──── DELETE /reservas/:id ───► CANCELADA
-                    │          │
-                    └────┬─────┘
-                         │
-            POST /cola/confirmar
-            (admin extrae del heap)
-                         │
-                    ┌────▼─────┐
-                    │CONFIRMADA│──── (uso completado) ───► COMPLETADA
-                    └──────────┘
+                     ┌──────────┐
+      POST /reservas │          │
+     ───────────────►│ PENDIENTE│──── DELETE /reservas/:id ───► CANCELADA
+                     │          │
+                     └────┬─────┘
+                          │
+             POST /reservas/{id}/confirmar
+             (usuario confirma)
+                          │
+                     ┌────▼─────┐
+                     │CONFIRMADA│──── PATCH /facturas/:id/pagar ───► PAGADA
+                     └────┬─────┘
+                          │
+                   (inicio de la franja)
+                          │
+                     ┌────▼─────┐
+                     │COMPLETADA│
+                     └──────────┘
 ```
 
 1. Un usuario crea una reserva → estado **PENDIENTE** → se inserta en la cola de prioridad.
-2. Un admin revisa la cola y confirma la de mayor prioridad → estado **CONFIRMADA**.
-3. Cuando la reserva se completa → estado **COMPLETADA** → se puede generar factura en Billing Service.
+2. El usuario confirma su reserva → estado **CONFIRMADA** → se genera factura.
+3. El usuario paga la factura → estado **PAGADA**.
+4. Al inicio de la franja → estado **COMPLETADA**.
 
 ### 5.3 Algoritmo: Cola de Prioridad (Min-Heap)
 
@@ -394,32 +401,28 @@ El siguiente diagrama muestra cómo un usuario interactúa con los tres microser
 │  (Java)      │ → Inserta en cola de prioridad — O(log n)
 └──────────────┘
      │
-     │ 3. Admin confirma la reserva de mayor prioridad
-     │    POST /cola/confirmar
+     │ 3. Usuario confirma su reserva
+     │    POST /reservas/{id}/confirmar
      ▼
 ┌──────────────┐
-│ Reservation  │ → Extrae del heap — O(log n)
+│ Reservation  │ → Genera factura en Billing Service
 │ Service      │ → Cambia estado a CONFIRMADA
 └──────────────┘
      │
-     │ 4. Reserva completada → Admin genera factura
-     │    POST /facturas
-     │    { reservaId:1, usuarioId:5, espacioId:1,
-     │      nombreEspacio:"Sala A", fechaInicio:"...",
-     │      fechaFin:"...", precioHora:50.00 }
-     ▼
-┌──────────────┐
-│  Billing     │ → Calcula: horas, subtotal, IVA 16%, total
-│  Service     │ → Guarda factura (estado: PENDIENTE)
-│  (Node.js)   │
-└──────────────┘
-     │
-     │ 5. Admin marca factura como pagada
+     │ 4. Usuario paga la factura
      │    PATCH /facturas/:id/pagar
      ▼
 ┌──────────────┐
 │  Billing     │ → Estado: PAGADA
-│  Service     │ → Disponible en reportes
+│  Service     │ → Notifica a Reservation Service
+│  (Node.js)   │ → Reserva pasa a PAGADA
+└──────────────┘
+     │
+     │ 5. Al inicio de la reserva, cambia a COMPLETADA
+     ▼
+┌──────────────┐
+│ Reservation  │ → Reserva COMPLETADA
+│ Service      │ → Disponible en reportes
 └──────────────┘
 ```
 

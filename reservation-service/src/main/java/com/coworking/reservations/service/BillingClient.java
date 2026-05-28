@@ -5,8 +5,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,6 +44,12 @@ public class BillingClient {
 
             restTemplate.exchange(billingUrl + "/facturas", HttpMethod.POST, entity, Map.class);
             return true;
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.CONFLICT) {
+                return true;
+            }
+            System.err.println("Error generando factura: " + e.getMessage());
+            return false;
         } catch (Exception e) {
             System.err.println("Error generando factura: " + e.getMessage());
             return false;

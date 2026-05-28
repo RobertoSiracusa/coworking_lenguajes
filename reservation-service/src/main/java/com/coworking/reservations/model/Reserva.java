@@ -54,6 +54,7 @@ public class Reserva {
     public enum EstadoReserva {
         PENDIENTE,
         CONFIRMADA,
+        PAGADA,
         CANCELADA,
         COMPLETADA
     }

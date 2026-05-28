@@ -44,6 +44,7 @@ Copiar `.env.example` a `.env`:
 | `SECRET_KEY` | Clave compartida con Auth Service | (requerido) |
 | `AUTH_SERVICE_URL` | URL del Auth Service | `http://auth-service:8001` |
 | `SPACE_SERVICE_URL` | URL del Space Service | `http://space-service:8002` |
+| `BILLING_SERVICE_URL` | URL del Billing Service | `http://billing-service:8004` |
 
 ## Como Ejecutar
 
@@ -76,15 +77,18 @@ Todos los endpoints excepto `/health` requieren un JWT valido.
 | GET | `/reservas/mis-estadisticas` | Usuario | Resumen personal: totales por estado, horas totales |
 | GET | `/reservas/buscar-fecha` | Admin | Busca reservas en una fecha. `algoritmo=lineal` o `algoritmo=binaria` |
 | PUT | `/reservas/{id}` | Usuario / Admin | Edita reserva pendiente (fechas, prioridad, notas) |
+| POST | `/reservas/{id}/confirmar` | Usuario / Admin | Confirma reserva pendiente y genera factura |
+| PATCH | `/reservas/{id}/pagar` | Usuario / Admin | Marca reserva como pagada |
 | DELETE | `/reservas/{id}` | Usuario / Admin | Cancela reserva |
-| PATCH | `/reservas/{id}/completar` | Admin | Marca reserva confirmada como completada |
+| PATCH | `/reservas/{id}/completar` | Admin | Marca reserva pagada como completada |
+| PATCH | `/reservas/{id}/estado` | Admin | Cambia estado directamente |
 | GET | `/cola` | Admin | Estado de la cola de prioridad |
 | POST | `/cola/confirmar` | Admin | Confirma la siguiente reserva de mayor prioridad |
 | GET | `/cache/estadisticas` | Admin | Metricas de los caches LRU y tamano del Interval Tree |
 
 ### Filtros y Paginacion (GET /reservas)
 
-- `estado` - Filtra por estado (`PENDIENTE`, `CONFIRMADA`, `CANCELADA`, `COMPLETADA`)
+- `estado` - Filtra por estado (`PENDIENTE`, `CONFIRMADA`, `PAGADA`, `CANCELADA`, `COMPLETADA`)
 - `prioridad` - Filtra por prioridad (1, 2, 3)
 - `desde` - Fecha inicio del rango (ISO date-time)
 - `hasta` - Fecha fin del rango (ISO date-time)
@@ -118,6 +122,7 @@ reservation-service/
         ├── dto/
         │   ├── ReservaRequest.java
         │   ├── ReservaResponse.java
+        │   ├── ActualizarEstadoRequest.java
         │   ├── EditarReservaRequest.java
         │   ├── UsuarioDto.java
         │   ├── EspacioDto.java
@@ -155,7 +160,7 @@ Detecta solapamientos de horarios en O(log n + k). Cada nodo guarda un intervalo
 - `eliminar` - O(log n).
 - `buscarSolapamientos(inicio, fin, ignorarId)` - O(log n + k) donde k es el numero de solapamientos.
 
-Reemplaza la query SQL original `existeConflicto` para verificaciones en memoria mas rapidas. El arbol se reconstruye al arrancar el servicio con todas las reservas activas (PENDIENTE o CONFIRMADA).
+ Reemplaza la query SQL original `existeConflicto` para verificaciones en memoria mas rapidas. El arbol se reconstruye al arrancar el servicio con todas las reservas activas (PENDIENTE, CONFIRMADA o PAGADA).
 
 ### Cache LRU
 
@@ -198,7 +203,7 @@ reservas
 ├── precio_hora     DECIMAL
 ├── fecha_inicio    TIMESTAMP NOT NULL
 ├── fecha_fin       TIMESTAMP NOT NULL
-├── estado          VARCHAR NOT NULL (PENDIENTE | CONFIRMADA | CANCELADA | COMPLETADA)
+├── estado          VARCHAR NOT NULL (PENDIENTE | CONFIRMADA | PAGADA | CANCELADA | COMPLETADA)
 ├── prioridad       INTEGER NOT NULL (1, 2, 3)
 ├── creado_en       TIMESTAMP
 └── notas           VARCHAR
@@ -208,5 +213,5 @@ reservas
 
 - La cola de prioridad y el Interval Tree son estructuras en memoria. Se reconstruyen al arrancar el servicio leyendo desde la base de datos.
 - Las reservas COMPLETADAS y CANCELADAS no participan en la deteccion de conflictos.
-- El endpoint `PATCH /reservas/{id}/completar` deja la reserva lista para que el Billing Service genere su factura, ya que `precioHora` esta disponible.
+- Al confirmar una reserva se genera la factura automaticamente; al pagar se marca como PAGADA y al inicio de la franja se completa.
 - La paginacion limita el tamanio maximo de pagina a 100 resultados.

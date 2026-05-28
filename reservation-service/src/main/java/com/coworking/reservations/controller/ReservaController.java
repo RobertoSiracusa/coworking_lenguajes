@@ -1,5 +1,6 @@
 package com.coworking.reservations.controller;
 
+import com.coworking.reservations.dto.ActualizarEstadoRequest;
 import com.coworking.reservations.dto.EditarReservaRequest;
 import com.coworking.reservations.dto.PaginadoResponse;
 import com.coworking.reservations.dto.ReservaRequest;
@@ -82,6 +83,15 @@ public class ReservaController {
         return service.editar(id, req, usuarioId, "admin".equals(rol));
     }
 
+    // POST /reservas/{id}/confirmar - confirmar reserva + generar factura
+    @PostMapping("/reservas/{id}/confirmar")
+    public ReservaResponse confirmar(@PathVariable Long id, HttpServletRequest httpReq) {
+        Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
+        String rol = (String) httpReq.getAttribute("rol");
+        String token = (String) httpReq.getAttribute("token");
+        return service.confirmar(id, usuarioId, "admin".equals(rol), token);
+    }
+
     // POST /reservas/{id}/facturar - facturar reserva (admin o dueño)
     @PostMapping("/reservas/{id}/facturar")
     public Map<String, Object> facturar(@PathVariable Long id, HttpServletRequest httpReq) {
@@ -91,12 +101,28 @@ public class ReservaController {
         return service.facturar(id, usuarioId, "admin".equals(rol), token);
     }
 
-    // PATCH /reservas/{id}/completar - marcar completada (admin) + generar factura
+    // PATCH /reservas/{id}/pagar - marcar como pagada (admin o dueño)
+    @PatchMapping("/reservas/{id}/pagar")
+    public ReservaResponse pagar(@PathVariable Long id, HttpServletRequest httpReq) {
+        Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
+        String rol = (String) httpReq.getAttribute("rol");
+        return service.marcarPagada(id, usuarioId, "admin".equals(rol));
+    }
+
+    // PATCH /reservas/{id}/completar - marcar completada (admin)
     @PatchMapping("/reservas/{id}/completar")
     public ReservaResponse completar(@PathVariable Long id, HttpServletRequest httpReq) {
         verificarAdmin(httpReq);
-        String token = (String) httpReq.getAttribute("token");
-        return service.completar(id, token);
+        return service.completar(id);
+    }
+
+    // PATCH /reservas/{id}/estado - cambiar estado (admin)
+    @PatchMapping("/reservas/{id}/estado")
+    public ReservaResponse cambiarEstado(@PathVariable Long id,
+                                         @Valid @RequestBody ActualizarEstadoRequest req,
+                                         HttpServletRequest httpReq) {
+        verificarAdmin(httpReq);
+        return service.actualizarEstadoAdmin(id, req.getEstado());
     }
 
     // GET /reservas - listar con filtros y paginacion (admin)
@@ -123,7 +149,8 @@ public class ReservaController {
     @PostMapping("/cola/confirmar")
     public ReservaResponse confirmarSiguiente(HttpServletRequest httpReq) {
         verificarAdmin(httpReq);
-        return service.confirmarSiguiente();
+        String token = (String) httpReq.getAttribute("token");
+        return service.confirmarSiguiente(token);
     }
 
     // GET /cache/estadisticas - stats de los LRU caches e interval tree

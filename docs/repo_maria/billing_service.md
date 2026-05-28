@@ -79,11 +79,11 @@ Dos middlewares:
 
 | Método | Ruta | Acceso | Descripción |
 |--------|------|--------|-------------|
-| `POST /facturas` | Admin | Crea factura para una reserva completada. Calcula montos con `calcularFactura()`. Detecta duplicados (constraint UNIQUE en `reserva_id`). |
+| `POST /facturas` | Usuario/Admin | Crea factura para una reserva confirmada. Calcula montos con `calcularFactura()`. Detecta duplicados (constraint UNIQUE en `reserva_id`). |
 | `GET /facturas/mis-facturas` | Usuario | Lista facturas del usuario autenticado. Ordena en memoria con `ordenarFacturas()`. Query params: `orden`, `dir`. |
 | `GET /facturas/:id` | Usuario/Admin | Detalle de una factura. Usuarios solo ven las suyas, admin ve cualquiera. |
 | `GET /facturas` | Admin | Lista todas las facturas. Soporta ordenamiento por query params. |
-| `PATCH /facturas/:id/pagar` | Admin | Marca una factura como `pagada`. |
+| `PATCH /facturas/:id/pagar` | Usuario/Admin | Marca una factura como `pagada` y notifica al Reservation Service. |
 
 ### `src/routes/reportes.js` — Dashboard y Reportes
 
@@ -129,5 +129,6 @@ facturas
 
 ## Comunicación con Otros Microservicios
 
-- Recibe datos de reservas completadas desde el **Reservation Service** (reserva_id, usuario_id, espacio_id, fechas, precio).
+- Recibe datos de reservas confirmadas desde el **Reservation Service** (reserva_id, usuario_id, espacio_id, fechas, precio).
+- Al pagar una factura, notifica al **Reservation Service** para marcar la reserva como PAGADA.
 - Comparte la misma `SECRET_KEY` que el **Auth Service** para verificar tokens JWT sin necesidad de comunicarse con él.
