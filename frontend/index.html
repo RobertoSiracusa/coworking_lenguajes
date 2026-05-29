@@ -212,6 +212,7 @@
         <button class="tab" data-tab="admin-espacios">Espacios</button>
         <button class="tab" data-tab="admin-facturas">Facturas</button>
         <button class="tab" data-tab="admin-cache">Cache</button>
+        <button class="tab" data-tab="admin-mantenimiento">Mantenimiento</button>
       </div>
 
       <div id="admin-cola" class="tab-content active">
@@ -266,6 +267,35 @@
         <h3>Estadisticas de cache</h3>
         <button id="btn-cargar-cache" class="btn-primary">Recargar</button>
         <pre id="cache-output" class="pre-output"></pre>
+      </div>
+
+      <div id="admin-mantenimiento" class="tab-content">
+        <h3 style="color: var(--rojo);">Zona de Peligro</h3>
+        <p style="color: var(--gris-2); margin-bottom: 1.5rem;">
+          Desde aquí puedes realizar acciones de mantenimiento destructivas sobre los microservicios.
+        </p>
+        <div class="card" style="border: 1px solid var(--rojo); padding: 1.5rem; background: rgba(239, 68, 68, 0.05); border-radius: 8px;">
+          <h4 style="color: var(--rojo); margin-top: 0; margin-bottom: 0.5rem;">Restablecer Base de Datos</h4>
+          <p style="font-size: 0.9rem; color: var(--gris-2); line-height: 1.5; margin-bottom: 1.5rem;">
+            Esta acción eliminará todas las facturas, reservas, espacios y usuarios de todos los microservicios. 
+            <strong>El usuario administrador actual no será eliminado para evitar perder el acceso al panel.</strong>
+          </p>
+          <button id="btn-reset-db" class="btn-danger" style="padding: 0.6rem 1.2rem; font-size: 0.9rem;">
+            Borrar todos los datos
+          </button>
+        </div>
+
+        <div class="card" style="border: 1px solid var(--azul-claro); padding: 1.5rem; background: rgba(77, 171, 247, 0.05); border-radius: 8px; margin-top: 1.5rem;">
+          <h4 style="color: var(--azul-claro-2); margin-top: 0; margin-bottom: 0.5rem;">Cargar datos de prueba</h4>
+          <p style="font-size: 0.9rem; color: var(--gris-2); line-height: 1.5; margin-bottom: 1.5rem;">
+            Crea 8 espacios, 5 usuarios, 13 reservas (en varios estados) y genera facturas automaticamente.
+            <strong>Aplica un reset previo</strong> para garantizar un estado limpio.
+          </p>
+          <button id="btn-seed-db" class="btn-primary" style="padding: 0.6rem 1.2rem; font-size: 0.9rem;">
+            Inicializar datos de prueba
+          </button>
+          <pre id="seed-output" class="pre-output" style="display: none; margin-top: 1rem; max-height: 300px; overflow-y: auto;"></pre>
+        </div>
       </div>
     </section>
 

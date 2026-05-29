@@ -89,6 +89,14 @@ const Admin = {
   async eliminarUsuario(id) {
     return fetchAPI(`${API.auth}/usuarios/${id}`, { method: 'DELETE' });
   },
+
+  async resetearDatos() {
+    await fetchAPI(`${API.billing}/facturas/reset`, { method: 'DELETE' });
+    await fetchAPI(`${API.reservation}/reservas/reset`, { method: 'DELETE' });
+    await fetchAPI(`${API.space}/espacios/reset`, { method: 'DELETE' });
+    await fetchAPI(`${API.auth}/usuarios/reset`, { method: 'DELETE' });
+    return { mensaje: 'Restablecimiento completo de datos finalizado con éxito.' };
+  },
 };
 
 // Tabs
@@ -442,3 +450,228 @@ async function cargarCache() {
 }
 
 document.getElementById('btn-cargar-cache').addEventListener('click', cargarCache);
+
+// Mantenimiento - Restablecer Base de Datos
+document.getElementById('btn-reset-db').addEventListener('click', async () => {
+  const confirmacion1 = await confirmar('¿Estás seguro de que deseas eliminar TODOS los datos del sistema? Esta acción es irreversible.', {
+    titulo: '⚠️ ZONA DE PELIGRO: Restablecimiento de Datos',
+    textoAceptar: 'Sí, continuar',
+    peligro: true
+  });
+  if (!confirmacion1) return;
+
+  const confirmacion2 = await confirmar('CONFIRMACIÓN DE SEGURIDAD REQUERIDA:\nSe eliminarán todas las facturas, reservas, espacios y cuentas de usuario (excepto la tuya). ¿Quieres proceder con la destrucción de datos?', {
+    titulo: '🛑 CONFIRMACIÓN FINAL',
+    textoAceptar: 'Destruir todos los datos',
+    peligro: true
+  });
+  if (!confirmacion2) return;
+
+  try {
+    toast('Iniciando restablecimiento de datos...', 'info');
+    const res = await Admin.resetearDatos();
+    toast(res.mensaje, 'success');
+    
+    // Recargar la página después de un breve delay para que la UI se actualice
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+  } catch (err) {
+    toast('Error en el restablecimiento: ' + err.message, 'error');
+  }
+});
+
+
+// ============================================================
+// SEED: cargar datos de prueba desde UI
+// ============================================================
+
+// Helper: login que retorna token sin tocar Estado.token global
+async function _loginUserSeed(email, password) {
+  const r = await fetch(`${API.auth}/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!r.ok) throw new Error(`Login ${email} fallo`);
+  const d = await r.json();
+  return d.token;
+}
+
+// Helper: crear reserva con un token especifico
+async function _crearReservaSeed(token, body) {
+  const r = await fetch(`${API.reservation}/reservas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+// Helper: ISO local YYYY-MM-DDTHH:MM:SS
+function _isoFechaSeed(diasDelta, hora, minuto) {
+  const d = new Date();
+  d.setDate(d.getDate() + diasDelta);
+  d.setHours(hora, minuto, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+}
+
+async function ejecutarSeed() {
+  const out = document.getElementById('seed-output');
+  out.style.display = 'block';
+  out.textContent = '';
+  const log = (msg) => { out.textContent += msg + '\n'; out.scrollTop = out.scrollHeight; };
+
+  try {
+    log('==> Reset previo');
+    await Admin.resetearDatos();
+    log('  ok');
+
+    // Espacios
+    log('\n==> Creando 8 espacios');
+    const espaciosData = [
+      { nombre: 'Sala Apolo',      descripcion: 'Sala de juntas con proyector',   capacidad: 8,  precio_por_hora: 25.00 },
+      { nombre: 'Sala Hermes',     descripcion: 'Sala chica para entrevistas',    capacidad: 4,  precio_por_hora: 15.00 },
+      { nombre: 'Salon Olimpo',    descripcion: 'Salon grande para eventos',      capacidad: 30, precio_por_hora: 80.00 },
+      { nombre: 'Oficina Atenea',  descripcion: 'Oficina privada con escritorio', capacidad: 2,  precio_por_hora: 18.00 },
+      { nombre: 'Sala Zeus',       descripcion: 'Sala ejecutiva con TV 4K',       capacidad: 12, precio_por_hora: 40.00 },
+      { nombre: 'Open Space Iris', descripcion: 'Coworking abierto',              capacidad: 20, precio_por_hora: 10.00 },
+      { nombre: 'Sala Hades',      descripcion: 'Sala oscura para podcast',       capacidad: 6,  precio_por_hora: 35.00 },
+      { nombre: 'Cabina Eco',      descripcion: 'Cabina insonorizada',            capacidad: 1,  precio_por_hora:  8.00 },
+    ];
+    const espacioIds = [];
+    for (const e of espaciosData) {
+      const r = await Admin.crearEspacio(e);
+      espacioIds.push(r.id);
+      log(`  + id=${r.id} ${e.nombre}`);
+    }
+
+    // Usuarios
+    log('\n==> Creando 5 usuarios');
+    const usuariosData = [
+      { nombre: 'Maria Lopez',  email: 'maria@test.com',  password: 'maria123',  rol: 'usuario' },
+      { nombre: 'Juan Perez',   email: 'juan@test.com',   password: 'juan123',   rol: 'usuario' },
+      { nombre: 'Ana Garcia',   email: 'ana@test.com',    password: 'ana123',    rol: 'usuario' },
+      { nombre: 'Carlos Ruiz',  email: 'carlos@test.com', password: 'carlos123', rol: 'usuario' },
+      { nombre: 'Sofia Diaz',   email: 'sofia@test.com',  password: 'sofia123',  rol: 'admin' },
+    ];
+    for (const u of usuariosData) {
+      const r = await Admin.crearUsuario(u);
+      log(`  + id=${r.id} ${u.nombre} (${u.rol})`);
+    }
+
+    // Reservas
+    log('\n==> Creando reservas variadas');
+    const tMaria  = await _loginUserSeed('maria@test.com',  'maria123');
+    const tJuan   = await _loginUserSeed('juan@test.com',   'juan123');
+    const tAna    = await _loginUserSeed('ana@test.com',    'ana123');
+    const tCarlos = await _loginUserSeed('carlos@test.com', 'carlos123');
+
+    const reservasDefs = [
+      [tMaria,  0, _isoFechaSeed(1, 9, 0),   _isoFechaSeed(1, 11, 0),  2, 'Reunion equipo'],
+      [tMaria,  2, _isoFechaSeed(2, 14, 0),  _isoFechaSeed(2, 17, 0),  1, 'Evento urgente'],
+      [tMaria,  4, _isoFechaSeed(5, 10, 30), _isoFechaSeed(5, 12, 30), 2, 'Demo cliente'],
+      [tJuan,   1, _isoFechaSeed(1, 15, 0),  _isoFechaSeed(1, 16, 0),  2, 'Entrevista'],
+      [tJuan,   3, _isoFechaSeed(3, 9, 0),   _isoFechaSeed(3, 13, 0),  3, 'Trabajo focalizado'],
+      [tJuan,   5, _isoFechaSeed(4, 10, 0),  _isoFechaSeed(4, 18, 0),  2, 'Dia de coworking'],
+      [tAna,    6, _isoFechaSeed(2, 16, 0),  _isoFechaSeed(2, 19, 0),  1, 'Grabacion podcast'],
+      [tAna,    7, _isoFechaSeed(6, 11, 0),  _isoFechaSeed(6, 12, 0),  3, 'Llamada cliente'],
+      [tAna,    0, _isoFechaSeed(3, 14, 0),  _isoFechaSeed(3, 16, 0),  2, 'Reunion clientes'],
+      [tCarlos, 0, _isoFechaSeed(7, 9, 0),   _isoFechaSeed(7, 11, 0),  2, 'Planning sprint'],
+      [tCarlos, 4, _isoFechaSeed(8, 14, 0),  _isoFechaSeed(8, 17, 0),  1, 'Junta directiva'],
+      [tCarlos, 2, _isoFechaSeed(10, 10, 0), _isoFechaSeed(10, 18, 0), 2, 'Conferencia anual'],
+      [tCarlos, 6, _isoFechaSeed(9, 12, 0),  _isoFechaSeed(9, 14, 0),  3, 'Podcast solo'],
+    ];
+    const reservas = [];  // [{id, token}]
+    for (const [tok, espIdx, ini, fin, prio, notas] of reservasDefs) {
+      const body = {
+        espacioId: espacioIds[espIdx],
+        fechaInicio: ini, fechaFin: fin,
+        prioridad: prio, notas,
+      };
+      const r = await _crearReservaSeed(tok, body);
+      if (r && r.id) {
+        reservas.push({ id: r.id, token: tok });
+        log(`  + reserva id=${r.id} esp=${espacioIds[espIdx]} prio=${prio}`);
+      } else {
+        log(`  ! fallo esp=${espacioIds[espIdx]}`);
+      }
+    }
+
+    // Confirmar (admin)
+    log('\n==> Confirmando reservas (URGENTES primero)');
+    for (let i = 0; i < 7; i++) {
+      try {
+        const r = await Admin.confirmarSiguiente();
+        log(`  + confirmada id=${r.id} (${r.prioridadNombre})`);
+      } catch (e) { break; }
+    }
+
+    // Pagar 4 (los usuarios pagan sus propias)
+    log('\n==> Pagando 4 reservas');
+    for (const r of reservas.slice(0, 4)) {
+      try {
+        const resp = await fetch(`${API.reservation}/reservas/${r.id}/pagar`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${r.token}` },
+        });
+        if (resp.ok) {
+          const d = await resp.json();
+          log(`  + reserva ${r.id} -> ${d.estadoPago}`);
+        }
+      } catch (e) {}
+    }
+
+    // Completar 2 (admin)
+    log('\n==> Completando 2 reservas pagadas');
+    for (const r of reservas.slice(0, 2)) {
+      try {
+        const x = await Admin.completarReserva(r.id);
+        log(`  + reserva ${r.id} -> ${x.estado}`);
+      } catch (e) {}
+    }
+
+    // Cancelar 2
+    log('\n==> Cancelando 2 reservas');
+    for (const r of reservas.slice(-2)) {
+      try {
+        const resp = await fetch(`${API.reservation}/reservas/${r.id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${r.token}` },
+        });
+        if (resp.ok) log(`  + reserva ${r.id} cancelada`);
+      } catch (e) {}
+    }
+
+    log('\n========= COMPLETADO =========');
+    log('Credenciales de prueba:');
+    log('  maria@test.com / maria123');
+    log('  juan@test.com  / juan123');
+    log('  ana@test.com   / ana123');
+    log('  carlos@test.com / carlos123');
+    log('  sofia@test.com / sofia123 (admin)');
+
+    toast('Datos de prueba cargados', 'success');
+  } catch (err) {
+    log('\nERROR: ' + err.message);
+    toast('Error en seed: ' + err.message, 'error');
+  }
+}
+
+document.getElementById('btn-seed-db').addEventListener('click', async () => {
+  if (!await confirmar('Esto borrara los datos actuales y cargara 8 espacios, 5 usuarios y 13 reservas. Continuar?', {
+    titulo: 'Inicializar datos de prueba',
+    textoAceptar: 'Inicializar',
+  })) return;
+  const btn = document.getElementById('btn-seed-db');
+  btn.disabled = true;
+  btn.textContent = 'Cargando...';
+  try {
+    await ejecutarSeed();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Inicializar datos de prueba';
+  }
+});

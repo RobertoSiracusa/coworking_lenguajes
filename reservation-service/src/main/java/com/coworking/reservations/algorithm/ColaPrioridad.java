@@ -110,4 +110,9 @@ public class ColaPrioridad {
         heap.set(i, heap.get(j));
         heap.set(j, temp);
     }
+
+    public void vaciar() {
+        heap.clear();
+    }
 }
+

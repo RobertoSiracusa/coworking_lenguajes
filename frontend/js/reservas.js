@@ -23,6 +23,10 @@ const Reservas = {
   async confirmar(id) {
     return fetchAPI(`${API.reservation}/reservas/${id}/confirmar`, { method: 'POST' });
   },
+
+  async pagar(id) {
+    return fetchAPI(`${API.reservation}/reservas/${id}/pagar`, { method: 'PATCH' });
+  },
 };
 
 // Horario de operacion (modificable)
@@ -287,12 +291,25 @@ function renderReservas() {
     const precioH = parseFloat(r.precioHora) || 0;
     const subtotal = horas * precioH;
     const total = subtotal * 1.16; // con IVA 16%
+    const estadoPago = r.estadoPago || 'NO_PAGADA';
     const puedeCancelar = ['PENDIENTE', 'CONFIRMADA'].includes(r.estado);
-    const puedeConfirmar = r.estado === 'PENDIENTE';
+    const puedePagar = r.estado === 'CONFIRMADA' && estadoPago === 'NO_PAGADA';
+
+    // Etiqueta legible del estado combinado
+    let etiqueta = '';
+    if (r.estado === 'PENDIENTE')       etiqueta = 'Por confirmar';
+    else if (r.estado === 'CONFIRMADA') etiqueta = estadoPago === 'PAGADA' ? 'Confirmada, pagada' : 'Confirmada, pendiente por pagar';
+    else if (r.estado === 'COMPLETADA') etiqueta = 'Completada';
+    else if (r.estado === 'CANCELADA')  etiqueta = 'Cancelada';
+
+    const badgeClass = estadoPago === 'PAGADA' ? 'badge-completada' : 'badge-' + r.estado.toLowerCase();
+
     return `
     <div class="lista-item">
       <div class="info">
-        <h4>${escaparHTML(r.nombreEspacio || 'Espacio')} <span class="badge badge-${r.estado.toLowerCase()}">${r.estado}</span></h4>
+        <h4>${escaparHTML(r.nombreEspacio || 'Espacio')}
+          <span class="badge ${badgeClass}">${etiqueta}</span>
+        </h4>
         <p>${formatearFecha(r.fechaInicio)} - ${formatearFecha(r.fechaFin)} (${horas}h)</p>
         <p style="font-size: 0.85rem; color: var(--gris-2);">
           Precio/h: <strong style="color: var(--azul-claro-2);">$${precioH.toFixed(2)}</strong>
@@ -302,7 +319,7 @@ function renderReservas() {
         <p style="font-size: 0.8rem; color: var(--gris-2);">Prioridad: ${r.prioridadNombre || 'NORMAL'}</p>
       </div>
       <div class="acciones">
-        ${puedeConfirmar ? `<button class="btn-primary" data-confirmar="${r.id}">Confirmar</button>` : ''}
+        ${puedePagar ? `<button class="btn-primary" data-pagar="${r.id}">Pagar</button>` : ''}
         ${puedeCancelar ? `<button class="btn-danger" data-cancelar="${r.id}">Cancelar</button>` : ''}
       </div>
     </div>
@@ -321,12 +338,12 @@ function renderReservas() {
     });
   });
 
-  cont.querySelectorAll('[data-confirmar]').forEach(btn => {
+  cont.querySelectorAll('[data-pagar]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!await confirmar('Confirmar esta reserva y generar factura?', { titulo: 'Confirmar reserva', textoAceptar: 'Confirmar' })) return;
+      if (!await confirmar('Pagar esta reserva? Se generara la factura automaticamente.', { titulo: 'Pagar reserva', textoAceptar: 'Pagar' })) return;
       try {
-        await Reservas.confirmar(btn.dataset.confirmar);
-        toast('Reserva confirmada. Factura generada.', 'success');
+        await Reservas.pagar(btn.dataset.pagar);
+        toast('Pago registrado. Factura generada.', 'success');
         cargarReservas();
       } catch (err) {
         toast('Error: ' + err.message, 'error');

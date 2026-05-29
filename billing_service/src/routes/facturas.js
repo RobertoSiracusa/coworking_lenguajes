@@ -281,6 +281,20 @@ router.patch('/:id/cancelar', solo_admin, async (req, res) => {
   res.json(result.rows[0]);
 });
 
+// DELETE /facturas/reset - admin deletes all invoices y vacia caches
+router.delete('/reset', solo_admin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM facturas');
+    // Invalidar caches: los reportes cacheados ya no son validos
+    const { cache_usuarios, cache_reportes } = require('../estructuras/cache_lru');
+    cache_reportes.vaciar();
+    cache_usuarios.vaciar();
+    res.json({ mensaje: 'Todas las facturas han sido eliminadas y caches vaciados' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /facturas/:id - borrado fisico
 router.delete('/:id', solo_admin, async (req, res) => {
   const result = await pool.query(

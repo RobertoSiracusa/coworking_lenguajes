@@ -18,6 +18,7 @@ public class ReservaResponse {
     private LocalDateTime fechaInicio;
     private LocalDateTime fechaFin;
     private Reserva.EstadoReserva estado;
+    private Reserva.EstadoPago estadoPago;
     private Integer prioridad;
     private String prioridadNombre;
     private LocalDateTime creadoEn;
@@ -34,6 +35,7 @@ public class ReservaResponse {
         dto.setFechaInicio(r.getFechaInicio());
         dto.setFechaFin(r.getFechaFin());
         dto.setEstado(r.getEstado());
+        dto.setEstadoPago(r.getEstadoPago());
         dto.setPrioridad(r.getPrioridad());
         dto.setPrioridadNombre(switch (r.getPrioridad()) {
             case 1  -> "URGENTE";

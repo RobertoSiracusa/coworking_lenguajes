@@ -66,7 +66,7 @@ public class ReservaController {
         return service.buscarPorFecha(fecha, algoritmo);
     }
 
-    @DeleteMapping("/reservas/{id}")
+    @DeleteMapping("/reservas/{id:\\d+}")
     public ReservaResponse cancelar(@PathVariable Long id, HttpServletRequest httpReq) {
         Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
         String rol = (String) httpReq.getAttribute("rol");
@@ -74,7 +74,7 @@ public class ReservaController {
     }
 
     // PUT /reservas/{id} - editar (usuario solo las suyas)
-    @PutMapping("/reservas/{id}")
+    @PutMapping("/reservas/{id:\\d+}")
     public ReservaResponse editar(@PathVariable Long id,
                                    @Valid @RequestBody EditarReservaRequest req,
                                    HttpServletRequest httpReq) {
@@ -101,14 +101,6 @@ public class ReservaController {
         return service.facturar(id, usuarioId, "admin".equals(rol), token);
     }
 
-    // PATCH /reservas/{id}/pagar - marcar como pagada (admin o dueño)
-    @PatchMapping("/reservas/{id}/pagar")
-    public ReservaResponse pagar(@PathVariable Long id, HttpServletRequest httpReq) {
-        Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
-        String rol = (String) httpReq.getAttribute("rol");
-        return service.marcarPagada(id, usuarioId, "admin".equals(rol));
-    }
-
     // PATCH /reservas/{id}/completar - marcar completada (admin)
     @PatchMapping("/reservas/{id}/completar")
     public ReservaResponse completar(@PathVariable Long id, HttpServletRequest httpReq) {
@@ -130,7 +122,8 @@ public class ReservaController {
     public ReservaResponse pagar(@PathVariable Long id, HttpServletRequest httpReq) {
         Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
         String rol = (String) httpReq.getAttribute("rol");
-        return service.pagar(id, usuarioId, "admin".equals(rol));
+        String token = (String) httpReq.getAttribute("token");
+        return service.pagar(id, usuarioId, "admin".equals(rol), token);
     }
 
     // GET /reservas/espacio/{espacioId} - obtener reservas de un espacio (para deshabilitar slots)
@@ -172,6 +165,13 @@ public class ReservaController {
     public Map<String, Object> estadisticasCache(HttpServletRequest httpReq) {
         verificarAdmin(httpReq);
         return service.estadisticasCache();
+    }
+
+    @DeleteMapping("/reservas/reset")
+    public Map<String, String> reset(HttpServletRequest httpReq) {
+        verificarAdmin(httpReq);
+        service.reset();
+        return Map.of("mensaje", "Todas las reservas han sido eliminadas y las estructuras de memoria han sido vaciadas.");
     }
 
     private void verificarAdmin(HttpServletRequest req) {

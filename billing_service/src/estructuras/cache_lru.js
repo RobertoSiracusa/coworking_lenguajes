@@ -97,6 +97,15 @@ class CacheLRU {
       claves:     Array.from(this.mapa.keys()),
     };
   }
+
+  // Vaciar completamente el cache (resetea contadores tambien)
+  vaciar() {
+    this.mapa.clear();
+    this.head.next = this.tail;
+    this.tail.prev = this.head;
+    this.hits = 0;
+    this.misses = 0;
+  }
 }
 
 // Singletons compartidos

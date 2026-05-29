@@ -121,3 +121,14 @@ func (c *CacheLRU) moverAlFrente(n *nodo) {
 	c.remover(n)
 	c.insertarAlFrente(n)
 }
+
+func (c *CacheLRU) Vaciar() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mapa = make(map[interface{}]*nodo)
+	c.head.next = c.tail
+	c.tail.prev = c.head
+	c.hits = 0
+	c.misses = 0
+}
+

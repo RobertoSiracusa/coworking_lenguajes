@@ -339,6 +339,19 @@ func (h *EspacioHandler) Eliminar(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"mensaje": "Espacio eliminado", "id": id})
 }
 
+// DELETE /espacios/reset - admin
+func (h *EspacioHandler) Reset(c *gin.Context) {
+	if err := h.repo.Reset(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.cacheLRU.Vaciar()
+	h.trie = estructuras.NewTrie()
+	h.indiceInvertido = estructuras.NewIndiceInvertido()
+	c.JSON(http.StatusOK, gin.H{"mensaje": "Todos los espacios han sido eliminados de la base de datos y memoria."})
+}
+
+
 // GET /cache/estadisticas - stats de todas las estructuras
 func (h *EspacioHandler) EstadisticasCache(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

@@ -49,8 +49,7 @@ public class ReservaService {
         // Cargar reservas activas en el interval tree
         for (Reserva r : repo.findAll()) {
             if (r.getEstado() == Reserva.EstadoReserva.PENDIENTE
-                    || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA
-                    || r.getEstado() == Reserva.EstadoReserva.PAGADA) {
+                    || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA) {
                 intervalTree.insertar(r);
             }
         }
@@ -87,8 +86,7 @@ public class ReservaService {
         }
 
         if (nuevoEstado == Reserva.EstadoReserva.PENDIENTE
-                || nuevoEstado == Reserva.EstadoReserva.CONFIRMADA
-                || nuevoEstado == Reserva.EstadoReserva.PAGADA) {
+                || nuevoEstado == Reserva.EstadoReserva.CONFIRMADA) {
             intervalTree.eliminar(id);
             intervalTree.insertar(reserva);
         } else {
@@ -258,32 +256,18 @@ public class ReservaService {
         return resp;
     }
 
-    public ReservaResponse marcarPagada(Long id, Long usuarioId, boolean esAdmin) {
-        Reserva reserva = repo.findById(id).orElseThrow(() ->
-                new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
-        if (!esAdmin && !reserva.getUsuarioId().equals(usuarioId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Solo puedes pagar tus propias reservas");
-        }
-        if (reserva.getEstado() == Reserva.EstadoReserva.PAGADA) {
-            return ReservaResponse.desde(reserva);
-        }
-        if (reserva.getEstado() != Reserva.EstadoReserva.CONFIRMADA) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Solo se pueden pagar reservas confirmadas");
-        }
-        reserva.setEstado(Reserva.EstadoReserva.PAGADA);
-        actualizarEstructuras(reserva, Reserva.EstadoReserva.PAGADA);
-        return ReservaResponse.desde(repo.save(reserva));
-    }
 
-    // Marcar como completada (admin)
+    // Marcar como completada (admin) - solo si estaba CONFIRMADA y PAGADA
     public ReservaResponse completar(Long id) {
         Reserva reserva = repo.findById(id).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
-        if (reserva.getEstado() != Reserva.EstadoReserva.PAGADA) {
+        if (reserva.getEstado() != Reserva.EstadoReserva.CONFIRMADA) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Solo se pueden completar reservas pagadas");
+                    "Solo se pueden completar reservas confirmadas");
+        }
+        if (reserva.getEstadoPago() != Reserva.EstadoPago.PAGADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "La reserva debe estar pagada antes de completar");
         }
         reserva.setEstado(Reserva.EstadoReserva.COMPLETADA);
         actualizarEstructuras(reserva, Reserva.EstadoReserva.COMPLETADA);
@@ -298,8 +282,8 @@ public class ReservaService {
         return ReservaResponse.desde(repo.save(reserva));
     }
 
-    // Pagar reserva (usuario o admin) - cambia estado de PENDIENTE a CONFIRMADA
-    public ReservaResponse pagar(Long id, Long usuarioId, boolean esAdmin) {
+    // Pagar reserva (usuario o admin) - cambia estadoPago a PAGADA + genera factura
+    public ReservaResponse pagar(Long id, Long usuarioId, boolean esAdmin, String jwt) {
         Reserva reserva = repo.findById(id).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Reserva no encontrada"));
 
@@ -307,20 +291,28 @@ public class ReservaService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Solo puedes pagar tus propias reservas");
         }
-
         if (reserva.getEstado() == Reserva.EstadoReserva.CANCELADA) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "No se puede pagar una reserva cancelada");
         }
-
-        if (reserva.getEstado() == Reserva.EstadoReserva.CONFIRMADA || reserva.getEstado() == Reserva.EstadoReserva.COMPLETADA) {
-            return ReservaResponse.desde(reserva);
+        if (reserva.getEstado() != Reserva.EstadoReserva.CONFIRMADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Solo se pueden pagar reservas confirmadas por el admin");
+        }
+        if (reserva.getEstadoPago() == Reserva.EstadoPago.PAGADA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "La reserva ya esta pagada");
         }
 
-        reserva.setEstado(Reserva.EstadoReserva.CONFIRMADA);
-        cola.eliminarPorId(id);
+        reserva.setEstadoPago(Reserva.EstadoPago.PAGADA);
+        Reserva guardada = repo.save(reserva);
 
-        return ReservaResponse.desde(repo.save(reserva));
+        // Trigger factura automatica al pagar
+        boolean ok = billingClient.generarFactura(guardada, jwt);
+        if (!ok) {
+            System.err.println("Reserva " + id + " pagada pero factura fallo");
+        }
+        return ReservaResponse.desde(guardada);
     }
 
     public Map<String, Object> estadoCola() {
@@ -404,7 +396,7 @@ public class ReservaService {
         long total = reservas.size();
         long pendientes = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.PENDIENTE).count();
         long confirmadas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.CONFIRMADA).count();
-        long pagadas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.PAGADA).count();
+        long pagadas = reservas.stream().filter(r -> r.getEstadoPago() == Reserva.EstadoPago.PAGADA).count();
         long completadas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.COMPLETADA).count();
         long canceladas = reservas.stream().filter(r -> r.getEstado() == Reserva.EstadoReserva.CANCELADA).count();
 
@@ -449,8 +441,12 @@ public class ReservaService {
     @Scheduled(fixedDelayString = "${reservas.autocomplete.delay.ms:60000}")
     public void completarPagadasPorHora() {
         LocalDateTime ahora = LocalDateTime.now();
-        List<Reserva> paraCompletar = repo.findByEstadoAndFechaInicioLessThanEqual(
-                Reserva.EstadoReserva.PAGADA, ahora);
+        // Buscar reservas CONFIRMADAS+PAGADAS cuya fecha de inicio ya paso
+        List<Reserva> paraCompletar = repo.findAll().stream()
+                .filter(r -> r.getEstado() == Reserva.EstadoReserva.CONFIRMADA
+                          && r.getEstadoPago() == Reserva.EstadoPago.PAGADA
+                          && !r.getFechaInicio().isAfter(ahora))
+                .collect(Collectors.toList());
         if (paraCompletar.isEmpty()) return;
         for (Reserva r : paraCompletar) {
             r.setEstado(Reserva.EstadoReserva.COMPLETADA);
@@ -474,5 +470,11 @@ public class ReservaService {
                 .filter(r -> r.getEstado() == Reserva.EstadoReserva.PENDIENTE || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA)
                 .map(ReservaResponse::desde)
                 .collect(Collectors.toList());
+    }
+
+    public void reset() {
+        repo.deleteAll();
+        cola.vaciar();
+        intervalTree.vaciar();
     }
 }

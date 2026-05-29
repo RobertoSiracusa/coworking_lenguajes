@@ -64,6 +64,7 @@ func main() {
 		admin.POST("", handler.Crear)
 		admin.PUT("/:id", handler.Actualizar)
 		admin.PATCH("/:id/disponibilidad", handler.CambiarDisponibilidad)
+		admin.DELETE("/reset", handler.Reset)
 		admin.DELETE("/:id", handler.Eliminar)
 	}
 

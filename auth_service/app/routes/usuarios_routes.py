@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -10,6 +10,25 @@ from app.algorithm.tabla_hash import cache
 from app.auth import hash_password
 
 router = APIRouter(prefix="/usuarios")
+
+
+# DELETE /usuarios/reset - borra todos los usuarios menos el admin que llama
+@router.delete("/reset")
+async def reset_usuarios(
+    admin: dict = Depends(solo_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(delete(Usuario).where(Usuario.id != admin["usuario_id"]))
+    await db.commit()
+    # Limpiar cache (mantener solo al admin actual)
+    cache.buckets = [[] for _ in range(cache.capacidad)]
+    cache.total_elementos = 0
+    cache.total_colisiones = 0
+    return {
+        "mensaje": "Usuarios reseteados",
+        "eliminados": res.rowcount,
+        "preservado_id": admin["usuario_id"],
+    }
 
 
 # POST /usuarios - admin crea usuario con rol explicito
@@ -65,6 +84,24 @@ async def cambiar_rol(
     # Invalidar cache (el rol cambio)
     cache.eliminar(f"email:{usuario.email}")
     return UsuarioResponse.model_validate(usuario)
+
+
+# DELETE /usuarios/reset
+@router.delete("/reset")
+async def reset_usuarios(
+    admin: dict = Depends(solo_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    admin_id = admin["usuario_id"]
+    # Obtener todos los usuarios menos el admin actual
+    resultado = await db.execute(select(Usuario).where(Usuario.id != admin_id))
+    usuarios_a_eliminar = resultado.scalars().all()
+    for u in usuarios_a_eliminar:
+        cache.eliminar(f"email:{u.email}")
+        cache.eliminar(f"token:{u.id}")
+        await db.delete(u)
+    await db.commit()
+    return {"mensaje": "Todos los usuarios han sido eliminados excepto el administrador actual", "eliminados": len(usuarios_a_eliminar)}
 
 
 # DELETE /usuarios/{id}

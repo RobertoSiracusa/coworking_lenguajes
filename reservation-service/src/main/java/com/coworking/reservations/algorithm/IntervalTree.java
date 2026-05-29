@@ -103,8 +103,7 @@ public class IntervalTree {
         boolean mismoEspacio = espacioId == null || nodo.reserva.getEspacioId().equals(espacioId);
         Reserva.EstadoReserva est = nodo.reserva.getEstado();
         boolean activa = est == Reserva.EstadoReserva.PENDIENTE
-                       || est == Reserva.EstadoReserva.CONFIRMADA
-                       || est == Reserva.EstadoReserva.PAGADA;
+                       || est == Reserva.EstadoReserva.CONFIRMADA;
         if (solapa && !esIgnorado && activa && mismoEspacio) {
             resultado.add(nodo.reserva);
         }
@@ -169,4 +168,10 @@ public class IntervalTree {
         actualizarAlturaYMax(y);
         return y;
     }
+
+    public void vaciar() {
+        raiz = null;
+        tamanio = 0;
+    }
 }
+

@@ -59,3 +59,8 @@ func (r *EspacioRepository) CambiarDisponibilidad(id uint, disponible bool) (*mo
 func (r *EspacioRepository) Eliminar(id uint) error {
 	return r.db.Delete(&models.Espacio{}, id).Error
 }
+
+func (r *EspacioRepository) Reset() error {
+	return r.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.Espacio{}).Error
+}
+
