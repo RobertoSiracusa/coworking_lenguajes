@@ -3,6 +3,7 @@ package com.coworking.reservations.service;
 import com.coworking.reservations.algorithm.ColaPrioridad;
 import com.coworking.reservations.algorithm.IntervalTree;
 import com.coworking.reservations.algorithm.BusquedaFechas;
+import com.coworking.reservations.algorithm.IndiceReservas;
 import com.coworking.reservations.dto.EditarReservaRequest;
 import com.coworking.reservations.dto.EspacioDto;
 import com.coworking.reservations.dto.PaginadoResponse;
@@ -38,23 +39,25 @@ public class ReservaService {
     private final AuthClient authClient;
     private final EspacioClient espacioClient;
     private final BillingClient billingClient;
+    private final IndiceReservas indice;
 
-    // Reconstruir cola e interval tree al arrancar
+    // Reconstruir cola, interval tree e indice al arrancar
     @PostConstruct
     public void inicializar() {
         List<Reserva> pendientes = repo.findByEstadoOrderByPrioridadAscCreadoEnAsc(
                 Reserva.EstadoReserva.PENDIENTE);
         pendientes.forEach(cola::insertar);
 
-        // Cargar reservas activas en el interval tree
+        // Cargar todas en el indice + activas en interval tree
         for (Reserva r : repo.findAll()) {
+            indice.insertar(r);
             if (r.getEstado() == Reserva.EstadoReserva.PENDIENTE
                     || r.getEstado() == Reserva.EstadoReserva.CONFIRMADA) {
                 intervalTree.insertar(r);
             }
         }
-        System.out.printf("Cola: %d pendientes. IntervalTree: %d activas%n",
-                pendientes.size(), intervalTree.tamanio());
+        System.out.printf("Cola: %d pendientes. IntervalTree: %d activas. Indice: %d reservas%n",
+                pendientes.size(), intervalTree.tamanio(), indice.tamanio());
     }
 
     // Validar franja horaria: minutos en {0, 30}, sin segundos, duracion multiplo de 1 hora
@@ -92,6 +95,8 @@ public class ReservaService {
         } else {
             intervalTree.eliminar(id);
         }
+
+        indice.actualizar(reserva);
     }
 
     // Crear reserva con validacion HTTP a auth y space services
@@ -136,6 +141,7 @@ public class ReservaService {
         Reserva guardada = repo.save(reserva);
         cola.insertar(guardada);
         intervalTree.insertar(guardada);
+        indice.insertar(guardada);
         return ReservaResponse.desde(guardada);
     }
 
@@ -182,6 +188,7 @@ public class ReservaService {
         if (req.getNotas() != null) reserva.setNotas(req.getNotas());
 
         Reserva guardada = repo.save(reserva);
+        indice.actualizar(guardada);
 
         if (req.getFechaInicio() != null || req.getFechaFin() != null) {
             intervalTree.insertar(guardada);
@@ -306,6 +313,7 @@ public class ReservaService {
 
         reserva.setEstadoPago(Reserva.EstadoPago.PAGADA);
         Reserva guardada = repo.save(reserva);
+        indice.actualizar(guardada);
 
         // Trigger factura automatica al pagar
         boolean ok = billingClient.generarFactura(guardada, jwt);
@@ -325,7 +333,23 @@ public class ReservaService {
     }
 
     public List<ReservaResponse> misReservas(Long usuarioId) {
-        return repo.findByUsuarioIdOrderByCreadoEnDesc(usuarioId).stream()
+        return misReservasConFiltros(usuarioId, null, null, null, null, null, null, null);
+    }
+
+    // Busqueda con filtros usando el IndiceReservas en memoria
+    // Cada filtro restringe sobre un set indexado, AND entre todos los presentes
+    public List<ReservaResponse> misReservasConFiltros(
+            Long usuarioId,
+            Reserva.EstadoReserva estado,
+            Reserva.EstadoPago estadoPago,
+            String sala,
+            java.time.LocalDate dia,
+            Integer duracion,
+            java.time.LocalDate desde,
+            java.time.LocalDate hasta) {
+        List<Reserva> resultado = indice.buscar(
+                usuarioId, estado, estadoPago, sala, dia, duracion, desde, hasta);
+        return resultado.stream()
                 .map(ReservaResponse::desde)
                 .collect(Collectors.toList());
     }
@@ -340,7 +364,9 @@ public class ReservaService {
         reserva.setEstado(Reserva.EstadoReserva.CANCELADA);
         cola.eliminarPorId(id);
         intervalTree.eliminar(id);
-        return ReservaResponse.desde(repo.save(reserva));
+        Reserva guardada = repo.save(reserva);
+        indice.actualizar(guardada);
+        return ReservaResponse.desde(guardada);
     }
 
     public List<ReservaResponse> listarTodas() {
@@ -476,5 +502,6 @@ public class ReservaService {
         repo.deleteAll();
         cola.vaciar();
         intervalTree.vaciar();
+        indice.vaciar();
     }
 }

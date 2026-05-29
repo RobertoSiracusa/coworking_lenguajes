@@ -415,14 +415,14 @@ async function cargarFacturasAdmin() {
 // Mantenimiento - Restablecer Base de Datos
 document.getElementById('btn-reset-db').addEventListener('click', async () => {
   const confirmacion1 = await confirmar('¿Estás seguro de que deseas eliminar TODOS los datos del sistema? Esta acción es irreversible.', {
-    titulo: '⚠️ ZONA DE PELIGRO: Restablecimiento de Datos',
+    titulo: 'Zona de peligro: restablecimiento de datos',
     textoAceptar: 'Sí, continuar',
     peligro: true
   });
   if (!confirmacion1) return;
 
   const confirmacion2 = await confirmar('CONFIRMACIÓN DE SEGURIDAD REQUERIDA:\nSe eliminarán todas las facturas, reservas, espacios y cuentas de usuario (excepto la tuya). ¿Quieres proceder con la destrucción de datos?', {
-    titulo: '🛑 CONFIRMACIÓN FINAL',
+    titulo: 'Confirmacion final',
     textoAceptar: 'Destruir todos los datos',
     peligro: true
   });

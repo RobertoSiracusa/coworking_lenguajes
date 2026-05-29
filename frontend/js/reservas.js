@@ -8,7 +8,18 @@ const Reservas = {
     });
   },
 
-  async misReservas() {
+  async misReservas(filtros = {}) {
+    const params = new URLSearchParams();
+    if (filtros.estado)    params.set('estado', filtros.estado);
+    if (filtros.sala)      params.set('sala', filtros.sala);
+    if (filtros.dia)       params.set('dia', filtros.dia);
+    if (filtros.duracion)  params.set('duracion', filtros.duracion);
+    const qs = params.toString();
+    return fetchAPI(`${API.reservation}/reservas/mis-reservas${qs ? '?' + qs : ''}`);
+  },
+
+  // Cargar lista no filtrada para poblar select de salas
+  async todasMisReservas() {
     return fetchAPI(`${API.reservation}/reservas/mis-reservas`);
   },
 
@@ -233,9 +244,6 @@ document.getElementById('form-reserva').addEventListener('submit', async (e) => 
   }
 });
 
-// Cache local de mis reservas para filtrar sin re-fetch
-let reservasCache = [];
-
 // Calcular duracion en horas
 function duracionHoras(r) {
   const di = new Date(r.fechaInicio);
@@ -243,50 +251,41 @@ function duracionHoras(r) {
   return Math.round((df - di) / 3600000);
 }
 
-// Filtrar segun selects
-function filtrarReservas(reservas) {
-  const sala     = document.getElementById('filtro-sala').value;
-  const estado   = document.getElementById('filtro-estado').value;
-  const dia      = document.getElementById('filtro-dia').value;
-  const duracion = document.getElementById('filtro-duracion').value;
-
-  return reservas.filter(r => {
-    if (sala && (r.nombreEspacio || '') !== sala) return false;
-    if (estado && r.estado !== estado) return false;
-    if (dia) {
-      const diaR = new Date(r.fechaInicio).toISOString().slice(0, 10);
-      if (diaR !== dia) return false;
-    }
-    if (duracion) {
-      const h = duracionHoras(r);
-      if (duracion === '5+') { if (h < 5) return false; }
-      else if (h !== parseInt(duracion)) return false;
-    }
-    return true;
-  });
+// Obtener filtros actuales para enviar al backend
+function obtenerFiltros() {
+  return {
+    sala:     document.getElementById('filtro-sala').value,
+    estado:   document.getElementById('filtro-estado').value,
+    dia:      document.getElementById('filtro-dia').value,
+    duracion: document.getElementById('filtro-duracion').value,
+  };
 }
 
-// Poblar select de salas con las unicas de las reservas
-function poblarSalasFiltro(reservas) {
-  const select = document.getElementById('filtro-sala');
-  const actual = select.value;
-  const salas = [...new Set(reservas.map(r => r.nombreEspacio).filter(Boolean))].sort();
-  select.innerHTML = '<option value="">Todas</option>' +
-    salas.map(s => `<option value="${escaparHTML(s)}">${escaparHTML(s)}</option>`).join('');
-  if (actual && salas.includes(actual)) select.value = actual;
+// Poblar select de salas con las unicas (request inicial sin filtros)
+async function poblarSalasFiltro() {
+  try {
+    const reservas = await Reservas.todasMisReservas();
+    const select = document.getElementById('filtro-sala');
+    const actual = select.value;
+    const salas = [...new Set(reservas.map(r => r.nombreEspacio).filter(Boolean))].sort();
+    select.innerHTML = '<option value="">Todas</option>' +
+      salas.map(s => `<option value="${escaparHTML(s)}">${escaparHTML(s)}</option>`).join('');
+    if (actual && salas.includes(actual)) select.value = actual;
+  } catch (err) {}
 }
 
-function renderReservas() {
+function renderReservas(reservas) {
   const cont = document.getElementById('lista-reservas');
-  const filtradas = filtrarReservas(reservasCache);
-  if (filtradas.length === 0) {
-    const msg = reservasCache.length === 0
-      ? 'No tienes reservas aun'
-      : 'Ninguna reserva coincide con los filtros';
+  if (!reservas || reservas.length === 0) {
+    const f = obtenerFiltros();
+    const tieneFiltros = f.sala || f.estado || f.dia || f.duracion;
+    const msg = tieneFiltros
+      ? 'Ninguna reserva coincide con los filtros'
+      : 'No tienes reservas aun';
     cont.innerHTML = `<p style="color: var(--gris); text-align: center; padding: 2rem;">${msg}</p>`;
     return;
   }
-  cont.innerHTML = filtradas.map(r => {
+  cont.innerHTML = reservas.map(r => {
     const horas = duracionHoras(r);
     const precioH = parseFloat(r.precioHora) || 0;
     const subtotal = horas * precioH;
@@ -352,24 +351,52 @@ function renderReservas() {
   });
 }
 
-// Listeners de filtros
+// Aplicar filtros: cada cambio hace request al backend
+async function aplicarFiltros() {
+  const f = obtenerFiltros();
+  // Duracion "5+" no es soportada server-side, se filtra en cliente con un tope
+  let filtrosBackend = { ...f };
+  if (f.duracion === '5+') delete filtrosBackend.duracion;
+
+  try {
+    let reservas = await Reservas.misReservas(filtrosBackend);
+    if (f.duracion === '5+') {
+      reservas = reservas.filter(r => duracionHoras(r) >= 5);
+    }
+    renderReservas(reservas);
+  } catch (err) {
+    toast('Error al filtrar: ' + err.message, 'error');
+  }
+}
+
+// Listeners de filtros: cada cambio dispara request al backend
 ['filtro-sala', 'filtro-estado', 'filtro-dia', 'filtro-duracion'].forEach(id => {
-  document.getElementById(id).addEventListener('change', renderReservas);
+  document.getElementById(id).addEventListener('change', aplicarFiltros);
 });
-document.getElementById('btn-limpiar-filtros').addEventListener('click', () => {
+document.getElementById('btn-limpiar-filtros').addEventListener('click', async () => {
   document.getElementById('filtro-sala').value = '';
   document.getElementById('filtro-estado').value = '';
   document.getElementById('filtro-dia').value = '';
   document.getElementById('filtro-duracion').value = '';
-  renderReservas();
+  await aplicarFiltros();
 });
 
 async function cargarReservas() {
   try {
+    // Request con filtros aplicados + stats independientes + lista para poblar salas
+    const filtros = obtenerFiltros();
+    const filtrosBackend = { ...filtros };
+    if (filtros.duracion === '5+') delete filtrosBackend.duracion;
+
     const [reservas, stats] = await Promise.all([
-      Reservas.misReservas(),
+      Reservas.misReservas(filtrosBackend),
       Reservas.misEstadisticas().catch(() => null),
     ]);
+
+    // Filtro client-side solo para "5+" horas (no soportado server-side)
+    const reservasFinales = filtros.duracion === '5+'
+      ? reservas.filter(r => duracionHoras(r) >= 5)
+      : reservas;
 
     if (stats) {
       document.getElementById('reservas-stats').innerHTML = `
@@ -400,9 +427,9 @@ async function cargarReservas() {
       `;
     }
 
-    reservasCache = reservas || [];
-    poblarSalasFiltro(reservasCache);
-    renderReservas();
+    // Poblar select de salas con todas las reservas (sin filtros)
+    poblarSalasFiltro();
+    renderReservas(reservasFinales);
 
   } catch (err) {
     toast('Error al cargar reservas: ' + err.message, 'error');

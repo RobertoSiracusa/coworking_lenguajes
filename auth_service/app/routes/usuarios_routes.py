@@ -143,11 +143,7 @@ async def buscar_usuarios(
     admin: dict = Depends(solo_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Busca usuarios por email.
-    ?algoritmo=hash  → busca en la tabla hash custom — O(1) promedio
-    ?algoritmo=lineal → carga todos y recorre uno por uno — O(n)
-    """
+    # algoritmo=hash O(1) promedio (cache), lineal O(n) (BD)
     if algoritmo == "hash":
         # Busqueda O(1) en la tabla hash
         encontrado = cache.buscar(f"email:{q}")

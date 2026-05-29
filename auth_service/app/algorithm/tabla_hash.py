@@ -1,24 +1,9 @@
 import time
 
 
+# Tabla Hash con encadenamiento separado. Funcion hash DJB2.
+# Insertar, buscar, eliminar O(1) promedio. Redimensiona al superar carga 0.75.
 class TablaHash:
-    """
-    Tabla Hash implementada desde cero con encadenamiento separado (separate chaining).
-
-    Cada bucket es una lista de tuplas (clave, valor, timestamp).
-    Cuando dos claves colisionan (mismo indice), se agregan a la misma lista.
-
-    Se usa como cache en memoria para tokens y usuarios recientes,
-    evitando consultas repetidas a la base de datos.
-
-    Funcion hash: variante DJB2 — simple y con buena distribucion.
-
-    Complejidades:
-        insertar:      O(1) promedio, O(n) peor caso (todas las claves colisionan)
-        buscar:        O(1) promedio
-        eliminar:      O(1) promedio
-        redimensionar: O(n) — se ejecuta cuando el factor de carga supera 0.75
-    """
 
     FACTOR_CARGA_MAX = 0.75
     CAPACIDAD_INICIAL = 16
@@ -34,18 +19,8 @@ class TablaHash:
 
     # --- Funcion hash ---
 
+    # DJB2: h = h * 33 + ord(c). Semilla 5381.
     def _hash(self, clave: str) -> int:
-        """
-        Funcion hash DJB2 de Daniel J. Bernstein.
-
-        Proceso:
-        1. Empezar con un valor inicial (5381)
-        2. Para cada caracter: hash = hash * 33 + codigo ASCII del caracter
-        3. Tomar modulo con la capacidad para obtener el indice del bucket
-
-        El numero 33 produce buena distribucion estadistica.
-        El valor 5381 es un primo que reduce colisiones.
-        """
         h = 5381
         for c in clave:
             h = ((h << 5) + h) + ord(c)  # h * 33 + ord(c)
@@ -53,12 +28,8 @@ class TablaHash:
 
     # --- Operaciones publicas ---
 
+    # O(1) promedio. Si la clave existe, actualiza valor y timestamp.
     def insertar(self, clave: str, valor) -> None:
-        """
-        Inserta o actualiza un par clave-valor.
-        Si la clave ya existe, actualiza el valor y el timestamp.
-        Complejidad: O(1) promedio.
-        """
         indice = self._hash(clave)
         bucket = self.buckets[indice]
 
@@ -79,12 +50,8 @@ class TablaHash:
         if self.factor_carga() > self.FACTOR_CARGA_MAX:
             self._redimensionar()
 
+    # O(1) promedio. Retorna None si no existe o TTL expirado.
     def buscar(self, clave: str):
-        """
-        Busca un valor por clave.
-        Retorna None si no existe o si el TTL expiro.
-        Complejidad: O(1) promedio.
-        """
         indice = self._hash(clave)
         bucket = self.buckets[indice]
         ahora = time.time()
@@ -124,18 +91,8 @@ class TablaHash:
 
     # --- Redimensionamiento ---
 
+    # O(n) - duplica capacidad y rehashea. Amortizado O(1) por insert.
     def _redimensionar(self) -> None:
-        """
-        Duplica la capacidad y reubica todos los elementos.
-
-        Proceso:
-        1. Crear nuevo array de buckets con el doble de capacidad
-        2. Recalcular el hash de cada elemento (porque cambio el modulo)
-        3. Insertar cada elemento en su nueva posicion
-
-        Complejidad: O(n) — se ejecuta rara vez gracias al factor de carga.
-        El costo amortizado de insertar sigue siendo O(1).
-        """
         self.total_redimensiones += 1
         vieja_capacidad = self.capacidad
         viejos_buckets = self.buckets
@@ -155,11 +112,8 @@ class TablaHash:
 
     # --- Estadisticas ---
 
+    # Metricas: capacidad, elementos, factor de carga, colisiones, distribucion.
     def estadisticas(self) -> dict:
-        """
-        Retorna metricas de la tabla hash.
-        Util para demostrar el comportamiento en clase.
-        """
         buckets_vacios = sum(1 for b in self.buckets if len(b) == 0)
         cadena_mas_larga = max(len(b) for b in self.buckets) if self.buckets else 0
 

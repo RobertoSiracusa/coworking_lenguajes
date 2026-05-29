@@ -43,10 +43,19 @@ public class ReservaController {
         return service.crear(req, usuarioId, token);
     }
 
+    // GET /reservas/mis-reservas - filtros server-side usando IndiceReservas en memoria
     @GetMapping("/reservas/mis-reservas")
-    public List<ReservaResponse> misReservas(HttpServletRequest httpReq) {
+    public List<ReservaResponse> misReservas(
+            @RequestParam(required = false) com.coworking.reservations.model.Reserva.EstadoReserva estado,
+            @RequestParam(name = "estado_pago", required = false) com.coworking.reservations.model.Reserva.EstadoPago estadoPago,
+            @RequestParam(required = false) String sala,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate dia,
+            @RequestParam(required = false) Integer duracion,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate desde,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate hasta,
+            HttpServletRequest httpReq) {
         Long usuarioId = (Long) httpReq.getAttribute("usuario_id");
-        return service.misReservas(usuarioId);
+        return service.misReservasConFiltros(usuarioId, estado, estadoPago, sala, dia, duracion, desde, hasta);
     }
 
     // GET /reservas/mis-estadisticas - resumen del usuario
