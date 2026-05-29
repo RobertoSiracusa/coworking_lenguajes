@@ -1,0 +1,18 @@
+# Environment (si en algun momento se agregan secrets)
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (por si se agrega build tool en el futuro)
+node_modules/
+dist/
+build/

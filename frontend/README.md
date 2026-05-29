@@ -1,16 +1,22 @@
 # Frontend Co-working
 
-Frontend minimalista que consume los 4 microservicios del sistema de co-working. Hecho con HTML, CSS y JavaScript vanilla. Sin build, sin frameworks, sin dependencias.
+Single Page Application minimalista que consume los 4 microservicios del sistema de co-working. HTML, CSS y JavaScript vanilla. Sin build, sin frameworks, sin dependencias.
 
 ## Caracteristicas
 
-- Single Page Application (SPA) por mostrar/ocultar secciones
-- Tema oscuro con paleta de azul oscuro, azul claro y destellos blancos
-- Autenticacion con JWT persistente en `localStorage`
-- Autocompletado de espacios usando el endpoint Trie del Space Service
-- Estadisticas personales de reservas y facturas
-- Panel de administracion (visible solo para usuarios con rol `admin`)
-- Visualizacion de metricas de los caches LRU y Tabla Hash
+- SPA con secciones mostradas/ocultadas por JS.
+- Tema oscuro con paleta azul oscuro + azul claro + destellos blancos.
+- Autenticacion JWT persistente en `localStorage`.
+- Modal de reservas con selector de fecha + grid de franjas (slots :00 y :30) + selector de duracion.
+- Validacion client-side de franjas (espejo de la validacion backend).
+- Filtros en Mis Reservas: sala, estado, dia, duracion.
+- Botones contextuales segun estado: Pagar, Cancelar.
+- Mostrar precio/hora, subtotal e IVA por reserva.
+- Modal de confirmacion custom (reemplaza window.confirm) con tema visual coherente.
+- Panel admin completo: cola, usuarios, espacios, facturas, mantenimiento.
+- Seed de datos de prueba ejecutable desde la UI.
+- Reset completo de bases de datos desde la UI (preserva admin actual).
+- Autocompletado de espacios en tiempo real consumiendo el endpoint Trie.
 
 ## Paleta de Colores
 
@@ -20,29 +26,29 @@ Frontend minimalista que consume los 4 microservicios del sistema de co-working.
 | Azul medio | `#102a43` | Fondo gradiente |
 | Azul card | `#14304d` | Tarjetas y elementos elevados |
 | Azul claro | `#4dabf7` | Botones, acentos primarios |
-| Azul claro brillante | `#6cc3ff` | Destellos, hovers |
+| Azul brillante | `#6cc3ff` | Destellos, hovers |
 | Blanco | `#ffffff` | Texto principal |
+| Verde | `#51cf66` | Estados positivos (pagada, completada) |
+| Rojo | `#ff6b6b` | Acciones destructivas, errores |
 
 ## Estructura
 
 ```
 frontend/
-├── index.html
-├── styles.css
 ├── README.md
+├── index.html               SPA con todas las secciones + modales
+├── styles.css               Paleta, layout, badges, slots, modales
 └── js/
-    ├── api.js              Wrapper fetch + estado + URLs
-    ├── auth.js             Login y registro
-    ├── espacios.js         Listar, buscar, autocomplete
-    ├── reservas.js         Crear y listar reservas
-    ├── facturas.js         Mis facturas y estadisticas
-    ├── admin.js            Panel de administracion
-    └── app.js              Router y arranque
+    ├── api.js               Wrapper fetch + Estado + URLs + confirmar() + toast()
+    ├── auth.js              Login y registro
+    ├── espacios.js          Listar, buscar, autocomplete
+    ├── reservas.js          Modal de slots + crear + listar + filtros + pagar
+    ├── facturas.js          Mis facturas y estadisticas
+    ├── admin.js             Panel admin: cola, usuarios, espacios, facturas, mantenimiento, seed
+    └── app.js               Router y arranque
 ```
 
 ## Como Ejecutar
-
-### Opcion 1: servidor estatico simple
 
 ```
 cd frontend
@@ -51,13 +57,9 @@ python3 -m http.server 3000
 
 Abrir `http://localhost:3000`.
 
-### Opcion 2: con cualquier servidor HTTP
-
-Sirve la carpeta `frontend/` con cualquier servidor estatico.
-
 ### Pre-requisitos
 
-Los 4 microservicios deben estar corriendo:
+Los 4 microservicios corriendo:
 
 | Servicio | Puerto |
 |----------|--------|
@@ -66,7 +68,7 @@ Los 4 microservicios deben estar corriendo:
 | Reservation | 8003 |
 | Billing | 8004 |
 
-Editar `js/api.js` si los puertos o URLs son diferentes:
+Editar `js/api.js` si los puertos son diferentes:
 
 ```js
 const API = {
@@ -77,65 +79,125 @@ const API = {
 };
 ```
 
-## Flujo de Uso
+## Secciones
 
-1. **Registro** o **Login** -> obtiene JWT del Auth Service.
-2. **Espacios** -> Space Service. Listado paginado con filtros. Autocomplete via Trie.
-3. **Click en espacio** -> abre modal para crear reserva. Reservation Service valida usuario via Auth y espacio via Space.
-4. **Mis Reservas** -> Reservation Service. Estadisticas personales + lista con cancelar.
-5. **Mis Facturas** -> Billing Service. Estadisticas personales + listado.
-6. **Admin** (solo rol admin):
-   - Cola de prioridad (Reservation Service) - confirmar siguiente
-   - Crear espacio (Space Service)
-   - Reportes de facturacion (Billing Service)
-   - Cache de los 4 servicios
+### Login / Registro
+Pantalla inicial. Persistente en localStorage. Si el token expira, el wrapper `fetchAPI` redirige al login automaticamente.
+
+### Espacios
+Listado con filtros (capacidad minima, orden por precio/capacidad/nombre) y paginacion. Autocompletado de busqueda en tiempo real consumiendo el endpoint Trie del Space Service. Click en un espacio abre modal de reserva.
+
+### Modal de Reserva
+- Selector de fecha (date input, minimo hoy)
+- Grid de franjas horarias en :00 y :30, desde 08:00 a 22:00
+- Slots pasados o ocupados se muestran tachados y deshabilitados
+- Selector de duracion: 1h, 2h, 3h, 4h, 6h, 8h
+- Resumen en vivo con precio total calculado
+- Validacion antes de enviar (espejo de la del backend)
+
+### Mis Reservas
+- Estadisticas personales (total, por estado, horas totales)
+- 4 filtros: sala, estado, dia, duracion (cache local, sin re-fetch)
+- Cada item muestra: nombre espacio, badge combinado (estado + estado de pago), fechas, duracion, precio/h, subtotal, IVA, total
+- Botones contextuales:
+  - PENDIENTE: Cancelar
+  - CONFIRMADA + NO_PAGADA: Pagar / Cancelar
+  - CONFIRMADA + PAGADA: (espera completar)
+  - COMPLETADA / CANCELADA: solo lectura
+
+### Mis Facturas
+Listado con estadisticas personales (gasto total, promedio, por estado).
+
+### Panel Admin (solo rol admin)
+
+| Tab | Funcionalidad |
+|-----|---------------|
+| Cola | Pendientes (cola de prioridad) + Confirmadas listas para completar. Boton "Confirmar siguiente" extrae del heap. |
+| Usuarios | Crear usuario con rol explicito + listar + cambiar rol + eliminar (no a si mismo) |
+| Espacios | Crear espacios |
+| Facturas | Dashboard de reportes + listado de facturas |
+| Mantenimiento | Boton rojo para borrar TODOS los datos (preserva admin actual). Boton azul para cargar seed de prueba (8 espacios, 5 usuarios, 13 reservas, varios estados). |
+
+## Componentes Reusables
+
+### `confirmar(mensaje, opciones)`
+Modal custom que reemplaza `window.confirm()`. Retorna Promise<boolean>.
+
+Opciones:
+- `titulo` - texto del header
+- `textoAceptar`, `textoCancelar` - labels de botones
+- `peligro` (boolean) - boton rojo si true
+
+Soporta:
+- Click backdrop = cancelar
+- ESC = cancelar
+- Enter = aceptar
+
+### `toast(mensaje, tipo)`
+Notificacion temporal abajo-derecha. Tipos: `''` (azul), `'success'` (verde), `'error'` (rojo).
+
+### `fetchAPI(url, opciones)`
+Wrapper de fetch con:
+- JWT automatico en header `Authorization`
+- 401 -> logout + redirect a login
+- Extraccion de mensajes de error de Spring (`errors[].defaultMessage`), FastAPI (`detail`), Express (`error`)
+
+## Algoritmos Usados Visualmente
+
+| Algoritmo | Donde |
+|-----------|-------|
+| Trie | Autocompletado de espacios (`/espacios/sugerir`) |
+| Min-heap | Tab Cola admin (`/cola`, `/cola/confirmar`) |
+| Estadisticas hash | Mis estadisticas (reservas y facturas) |
+| Validacion de franjas | Modal de reserva (espejo del backend) |
+| Filtros client-side | Mis Reservas (sin re-fetch) |
+| Recomendacion | (Pendiente expose en UI) |
 
 ## Endpoints Utilizados
 
 ### Auth Service (8001)
-- `POST /registro`
-- `POST /login`
-- `GET /cache/estadisticas` (admin)
+- POST /registro
+- POST /login
+- GET /usuarios, POST /usuarios, PATCH /usuarios/:id/rol, DELETE /usuarios/:id (admin)
+- DELETE /usuarios/reset (admin)
 
 ### Space Service (8002)
-- `GET /espacios` con filtros y paginacion
-- `GET /espacios/buscar` (binaria por defecto)
-- `GET /espacios/sugerir` (Trie autocomplete)
-- `GET /espacios/:id`
-- `POST /espacios` (admin)
-- `GET /cache/estadisticas` (admin)
+- GET /espacios (filtros, paginacion)
+- GET /espacios/buscar, /espacios/sugerir
+- POST /espacios, DELETE /espacios/reset (admin)
 
 ### Reservation Service (8003)
-- `POST /reservas`
-- `GET /reservas/mis-reservas`
-- `GET /reservas/mis-estadisticas`
-- `DELETE /reservas/:id`
-- `GET /cola` (admin)
-- `POST /cola/confirmar` (admin)
-- `GET /cache/estadisticas` (admin)
+- POST /reservas, GET /reservas/mis-reservas, /mis-estadisticas
+- DELETE /reservas/:id, PATCH /reservas/:id/pagar
+- GET /cola, POST /cola/confirmar (admin)
+- PATCH /reservas/:id/completar (admin)
+- DELETE /reservas/reset (admin)
+- GET /reservas/espacio/:id (slots ocupados en modal)
 
 ### Billing Service (8004)
-- `GET /facturas/mis-facturas`
-- `GET /facturas/mis-estadisticas`
-- `GET /reportes/resumen` (admin)
-- `GET /reportes/por-espacio` (admin)
-- `GET /cache/estadisticas` (admin)
+- GET /facturas/mis-facturas, /facturas/mis-estadisticas
+- GET /reportes/resumen, /reportes/por-espacio (admin)
+- DELETE /facturas/reset (admin)
 
-## CORS
+## Seed desde la UI
 
-Los microservicios deben permitir CORS desde el origen del frontend. El Billing Service ya usa `cors()` en Express. Auth Service (FastAPI), Space Service (Gin) y Reservation Service (Spring Boot) pueden requerir configuracion adicional si se sirven en dominios distintos.
+Panel admin -> Mantenimiento -> "Inicializar datos de prueba":
 
-Para desarrollo local, sirviendo desde `localhost:3000` y consumiendo `localhost:800X`, lo mas comun es:
+1. Reset previo (preserva admin actual)
+2. Crea 8 espacios (Sala Apolo, Hermes, Olimpo, etc.)
+3. Crea 5 usuarios (maria, juan, ana, carlos, sofia/admin)
+4. Login a cada usuario y crea 13 reservas en sus nombres
+5. Admin confirma 7 (URGENTES primero por min-heap)
+6. Usuarios pagan 4 (genera facturas automaticamente)
+7. Admin completa 2
+8. Cancela 2
 
-- Permitir todos los origenes en desarrollo.
-- O servir el frontend con un proxy reverso (nginx) que mapee `/api/auth/*` -> `8001`, etc.
+Log en vivo dentro de la UI.
 
 ## Notas
 
-- El JWT se guarda en `localStorage`. Si el token expira, el wrapper `fetchAPI` redirige automaticamente al login.
-- El boton **Admin** del nav solo aparece si el `rol` del JWT es `admin`. Para crear un admin, registrar un usuario y luego actualizar manualmente el campo `rol` en la base de datos del Auth Service.
-- Las paginas usan animaciones suaves al cambiar. El boton de autocompletado consume el Trie del Space Service, demostrando autocompletado en O(L + k) en tiempo real.
-- El panel de cache muestra metricas en vivo de:
-  - Tabla Hash (DJB2, separate chaining) del Auth Service
-  - Cache LRU (doubly linked list + map) de los demas servicios
-  - Tamano del Interval Tree del Reservation Service
+- El token JWT se guarda en `localStorage`. Borrarlo con `localStorage.clear(); location.reload()` si el SECRET_KEY cambia entre sesiones.
+- El boton Admin solo aparece para usuarios con `rol === 'admin'`.
+- El modal de reserva pre-llena con la proxima franja valida si el slot esta libre.
+- El panel admin Mantenimiento incluye 2 cards: peligro (rojo) para borrar y constructivo (azul) para seed.
+- Las reservas y facturas se cachean en memoria del browser para filtrar sin re-fetch.

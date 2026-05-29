@@ -1,0 +1,36 @@
+# Maven
+target/
+.mvn/wrapper/maven-wrapper.jar
+.mvnw
+.mvnw.cmd
+
+# Compiled
+*.class
+*.jar
+*.war
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Spring Boot
+HELP.md

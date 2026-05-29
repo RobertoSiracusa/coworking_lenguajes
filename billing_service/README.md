@@ -1,106 +1,107 @@
 # Billing Service
 
-Servicio de Facturacion y Reportes del sistema de Co-working. Genera facturas a partir de reservas confirmadas, gestiona estados de pago y produce reportes financieros para administradores.
+Servicio de facturacion y reportes del sistema de co-working. Recibe peticiones desde Reservation Service (trigger automatico al pagar una reserva) o desde el usuario/admin (manual). Calcula montos con IVA y produce reportes financieros para administradores.
 
 ## Descripcion
 
-Este microservicio se encarga de:
-
-- Crear, editar, cancelar y eliminar facturas.
-- Calcular automaticamente subtotales, impuestos (IVA del 16 por ciento) y totales.
-- Listar facturas con filtros (estado, rango de fechas) y paginacion.
-- Generar reportes agregados: ingresos por espacio, gasto por usuario, ingresos mensuales y ranking de espacios.
-- Validar que los usuarios existan consultando al servicio de autenticacion.
-- Enriquecer las respuestas con datos de usuario (nombre, email) obtenidos del Auth Service.
-- Buscar facturas por fecha con dos algoritmos comparables: lineal y binaria.
-- Cachear datos pesados en memoria con un Cache LRU implementado desde cero.
+- CRUD completo de facturas: crear, listar (con filtros + paginacion), editar, eliminar, marcar pagada/cancelada.
+- Calculo automatico de horas, subtotal, IVA 16%, total.
+- Trigger automatico desde Reservation Service al pagar una reserva.
+- Acceso del usuario (puede facturar sus propias reservas) o admin (puede facturar cualquiera).
+- Reportes agregados: dashboard, por espacio, por usuario, ingresos mensuales, top espacios.
+- Estadisticas personales del usuario autenticado.
+- Busqueda lineal vs binaria por fecha (comparacion didactica).
+- Cache LRU implementado desde cero para usuarios y reportes pesados.
+- Endpoint de mantenimiento para borrar todas las facturas + vaciar caches.
 
 ## Tecnologias
 
 - Node.js 20
 - Express 4
-- PostgreSQL 15
-- JSON Web Tokens (verificacion con `jsonwebtoken`)
-- Axios (cliente HTTP hacia el Auth Service)
-- Docker y Docker Compose
-
-## Requisitos Previos
-
-- Node.js 20 o superior (para ejecucion local sin Docker)
-- Docker y Docker Compose
-- PostgreSQL 15 (si se ejecuta sin Docker)
-- Servicio de autenticacion corriendo y accesible
+- PostgreSQL 15 (cliente `pg`)
+- jsonwebtoken
+- axios (HTTP al Auth Service)
 
 ## Variables de Entorno
 
-Copiar `.env.example` a `.env` y ajustar segun el entorno:
-
 | Variable | Descripcion | Valor por defecto |
 |----------|-------------|-------------------|
-| `PORT` | Puerto donde escucha el servicio | `8004` |
-| `DATABASE_URL` | Cadena de conexion a PostgreSQL | `postgresql://coworking_user:coworking_pass@db:5432/billingdb` |
-| `SECRET_KEY` | Clave compartida con el Auth Service para verificar JWT | (requerido) |
-| `AUTH_SERVICE_URL` | URL base del Auth Service | `http://auth-service:8001` |
-| `RESERVATION_SERVICE_URL` | URL base del Reservation Service | `http://reservation-service:8003` |
-
-La `SECRET_KEY` debe ser exactamente la misma que usa el Auth Service para firmar los tokens. De lo contrario la verificacion fallara.
+| PORT | Puerto del servicio | 8004 |
+| DATABASE_URL | URL PostgreSQL | (requerido) |
+| SECRET_KEY | Compartida (>= 32 chars) | (requerido) |
+| AUTH_SERVICE_URL | URL Auth Service | http://auth-service:8001 |
 
 ## Como Ejecutar
 
-### Con Docker Compose
-
 ```
 cp .env.example .env
-docker-compose up --build
+docker compose up --build
 ```
 
-El servicio queda disponible en `http://localhost:8004` y la base de datos PostgreSQL en `localhost:5435`.
-
-### En Local sin Docker
-
-```
-cp .env.example .env
-npm install
-npm run dev
-```
-
-Para conexion local ajustar `DATABASE_URL` a `postgresql://coworking_user:coworking_pass@localhost:5435/billingdb`.
+Servicio en `http://localhost:8004`. BD en `localhost:5435`.
 
 ## Endpoints
 
-Todos los endpoints excepto `/health` requieren un JWT valido en el header `Authorization: Bearer <token>`.
-
 | Metodo | Ruta | Acceso | Descripcion |
 |--------|------|--------|-------------|
-| GET | `/health` | Publico | Verifica que el servicio este activo |
-| POST | `/facturas` | Usuario / Admin | Crea una factura. Valida que el usuario exista en Auth Service |
-| GET | `/facturas` | Admin | Lista todas las facturas con filtros, paginacion y datos enriquecidos |
-| GET | `/facturas/mis-facturas` | Usuario | Lista las facturas del usuario autenticado con filtros y paginacion |
-| GET | `/facturas/mis-estadisticas` | Usuario | Resumen personal del usuario autenticado |
-| GET | `/facturas/buscar-fecha` | Admin | Busca facturas en una fecha. Acepta `algoritmo=lineal` o `algoritmo=binaria` |
-| GET | `/facturas/:id` | Usuario / Admin | Detalle de una factura (el usuario solo ve las suyas) |
-| PUT | `/facturas/:id` | Admin | Edita campos de una factura |
-| PATCH | `/facturas/:id/pagar` | Usuario / Admin | Marca la factura como pagada y notifica al Reservation Service |
-| PATCH | `/facturas/:id/cancelar` | Admin | Marca la factura como cancelada |
-| DELETE | `/facturas/:id` | Admin | Elimina fisicamente una factura |
-| GET | `/reportes/resumen` | Admin | Dashboard con totales generales |
-| GET | `/reportes/por-espacio` | Admin | Ingresos agrupados por espacio |
-| GET | `/reportes/por-usuario` | Admin | Gasto agrupado por usuario |
-| GET | `/reportes/ingresos-mensuales` | Admin | Ingresos mensuales con tendencia |
-| GET | `/reportes/top-espacios` | Admin | Top N espacios mas rentables |
-| GET | `/cache/estadisticas` | Admin | Metricas de los caches LRU |
+| GET | /health | Publico | Health check |
+| POST | /facturas | Admin / Dueno | Crea factura. Si rol=usuario solo permite usuario_id propio. Valida via Auth Service si admin. |
+| GET | /facturas | Admin | Lista todas con filtros, paginacion y enriquecidas con nombre/email del usuario |
+| GET | /facturas/mis-facturas | Usuario | Lista propias |
+| GET | /facturas/mis-estadisticas | Usuario | Resumen personal (gasto total, promedio, conteos por estado) |
+| GET | /facturas/buscar-fecha | Admin | `algoritmo=lineal\|binaria` |
+| GET | /facturas/:id | Usuario / Admin | Detalle (usuario solo las suyas) |
+| PUT | /facturas/:id | Admin | Edita campos arbitrarios |
+| PATCH | /facturas/:id/pagar | Admin | Marca como pagada |
+| PATCH | /facturas/:id/cancelar | Admin | Marca como cancelada |
+| DELETE | /facturas/:id | Admin | Borra fisicamente |
+| DELETE | /facturas/reset | Admin | Mantenimiento: borra todas las facturas + vacia caches LRU |
+| GET | /reportes/resumen | Admin | Dashboard (total facturas, ingresos, hoy, pendientes, promedio) |
+| GET | /reportes/por-espacio | Admin | Ingresos agrupados por espacio (cached) |
+| GET | /reportes/por-usuario | Admin | Gasto agrupado por usuario (cached) |
+| GET | /reportes/ingresos-mensuales | Admin | Ventana deslizante por mes con tendencia % |
+| GET | /reportes/top-espacios | Admin | Top N espacios mas rentables |
+| GET | /cache/estadisticas | Admin | Stats de los caches LRU |
 
 ### Filtros y Paginacion
 
-Los listados de facturas aceptan los siguientes query params:
+- `estado` - pendiente, pagada, cancelada
+- `desde`, `hasta` - rango por `creado_en`
+- `orden` - campo (default `creado_en`)
+- `dir` - asc o desc
+- `pagina`, `por_pagina` (max 100)
 
-- `estado` - Filtra por estado (`pendiente`, `pagada`, `cancelada`)
-- `desde` - Fecha de inicio del rango (formato ISO)
-- `hasta` - Fecha de fin del rango (formato ISO)
-- `orden` - Campo por el cual ordenar (default `creado_en`)
-- `dir` - Direccion del ordenamiento (`asc` o `desc`)
-- `pagina` - Numero de pagina (default 1)
-- `por_pagina` - Resultados por pagina (default 20, maximo 100)
+## Algoritmos y Estructuras
+
+### Calculo de Factura — O(1)
+
+```
+horas    = (fecha_fin - fecha_inicio) / 3.600.000 ms
+subtotal = horas * precio_hora
+impuesto = subtotal * 0.16    (IVA 16%)
+total    = subtotal + impuesto
+```
+
+### Agrupamiento por Hash Map — O(n)
+Objeto JavaScript como tabla hash. Una sola pasada acumula por `espacio_id` o `usuario_id`.
+
+### Ventana Deslizante — O(n)
+Genera N ventanas mensuales vacias y acumula totales en cada una.
+
+### Busqueda Lineal vs Binaria por Fecha
+- Lineal: O(n)
+- Binaria: O(n log n) sort + O(log n) con dos lower_bound para rango del dia
+
+### Ordenamiento — O(n log n)
+`Array.sort` nativo (TimSort) sobre copia.
+
+### Cache LRU — O(1)
+Doubly linked list + Map de JavaScript.
+
+- `cache_usuarios` (capacidad 100) - datos del Auth Service
+- `cache_reportes` (capacidad 50) - resultados de reportes pesados
+
+Soporta operaciones `get`, `put`, `eliminar`, `tamanio`, `estadisticas` y **`vaciar()`** (invalida todo el cache cuando se hace reset).
 
 ## Estructura del Proyecto
 
@@ -112,75 +113,35 @@ billing_service/
 ├── package.json
 ├── .env.example
 └── src/
-    ├── index.js                Punto de entrada y configuracion Express
-    ├── db.js                   Conexion a PostgreSQL e inicializacion de tablas
+    ├── index.js                Punto de entrada Express + CORS
+    ├── db.js                   Pool PostgreSQL + inicializar_bd
     ├── middleware/
-    │   └── auth.js             Verificacion de JWT y control de rol admin
+    │   └── auth.js             verificar_jwt, solo_admin (deja pasar OPTIONS)
     ├── routes/
-    │   ├── facturas.js         Endpoints CRUD de facturas
-    │   └── reportes.js         Endpoints de reportes y analitica
+    │   ├── facturas.js         CRUD + reset + busqueda
+    │   └── reportes.js         Reportes con cache
     ├── algorithm/
-    │   ├── reportes.js         Algoritmos de calculo, agrupamiento y ventana deslizante
-    │   └── busqueda.js         Busqueda lineal y binaria por fecha
+    │   ├── reportes.js         Calculo, agrupamiento, ventana deslizante
+    │   └── busqueda.js         Lineal y binaria por fecha
     ├── estructuras/
-    │   └── cache_lru.js        Implementacion desde cero del Cache LRU
+    │   └── cache_lru.js        CacheLRU desde cero + metodo vaciar()
     └── servicios/
-        ├── auth_client.js      Cliente HTTP para el Auth Service
-        └── reservation_client.js  Cliente HTTP para el Reservation Service
+        └── auth_client.js      Cliente HTTP al Auth Service
 ```
 
-## Algoritmos y Estructuras de Datos
+## Integracion con Otros Servicios
 
-### Calculo de Factura
+### Auth Service
+- Si admin crea factura, valida que `usuario_id` exista.
+- Si lista facturas como admin, enriquece con nombre y email del usuario.
+- Respuestas cacheadas en LRU.
 
-Complejidad O(1). Calcula horas entre dos fechas, aplica el precio por hora, calcula el IVA del 16 por ciento y suma el total.
+### Reservation Service (entrada automatica)
+- Cuando un usuario paga (`PATCH /reservas/{id}/pagar` en Reservation), Reservation hace POST automatico a `/facturas` con los datos de la reserva. Si la factura ya existe (constraint UNIQUE en `reserva_id`), retorna 409.
 
-### Ordenamiento
+## CORS
 
-Complejidad O(n log n). Usa el algoritmo nativo de JavaScript (TimSort) sobre una copia del array, nunca muta el original.
-
-### Agrupamiento por Espacio y por Usuario
-
-Complejidad O(n). Una sola pasada sobre las facturas, usando un objeto JavaScript como tabla hash. El acceso a las claves es O(1) en promedio.
-
-### Ventana Deslizante (Ingresos Mensuales)
-
-Complejidad O(n). Se crean N ventanas vacias (una por mes) y se recorre la lista de facturas una sola vez, acumulando los totales en la ventana correspondiente. Evita ejecutar una consulta por cada mes.
-
-### Busqueda Lineal vs Binaria
-
-- Lineal: O(n). Recorre todas las facturas comparando fechas.
-- Binaria: O(n log n) por el ordenamiento previo mas O(log n) por la busqueda. Usa dos busquedas tipo `lower_bound` para encontrar el rango de un dia completo.
-
-El endpoint `/facturas/buscar-fecha` permite comparar ambos algoritmos pasando `algoritmo=lineal` o `algoritmo=binaria`.
-
-### Cache LRU
-
-Implementacion desde cero con lista doblemente enlazada mas hash map (Map de JavaScript).
-
-- `get(clave)` - O(1). Si la clave existe, mueve el nodo al frente.
-- `put(clave, valor)` - O(1). Inserta o actualiza. Si excede la capacidad, elimina el nodo menos usado (el de la cola).
-- `eliminar(clave)` - O(1).
-- `estadisticas()` - Retorna hits, misses, hit rate, tamanio actual y capacidad.
-
-El servicio mantiene dos instancias:
-
-- `cache_usuarios` con capacidad 100, para datos obtenidos del Auth Service.
-- `cache_reportes` con capacidad 50, para resultados de reportes pesados.
-
-## Integracion con Auth Service
-
-El Billing Service se comunica con el Auth Service via HTTP para dos casos:
-
-1. **Validacion al crear facturas**: antes de insertar una factura, llama a `GET /usuarios` en el Auth Service para confirmar que el `usuario_id` existe. Si no existe, retorna 404.
-
-2. **Enriquecimiento de listados**: al listar facturas como admin, agrega los campos `usuario_nombre` y `usuario_email` consultando al Auth Service. Los datos se cachean en el LRU para minimizar llamadas HTTP.
-
-El JWT del usuario autenticado se reenvia al Auth Service en cada llamada (`Authorization: Bearer <token>`). Como `GET /usuarios` en el Auth Service requiere rol admin, esta integracion funciona cuando un administrador realiza la operacion.
-
-## Integracion con Reservation Service
-
-Al marcar una factura como pagada, el Billing Service notifica al Reservation Service para actualizar el estado de la reserva a `PAGADA`. Esta llamada se realiza con el mismo JWT del usuario que pago la factura.
+`app.use(cors())` global + `verificar_jwt` deja pasar OPTIONS para preflight.
 
 ## Modelo de Datos
 
@@ -204,6 +165,8 @@ facturas
 
 ## Notas
 
-- El IVA esta fijado en 16 por ciento. Para cambiarlo, modificar la constante `IVA` en `src/algorithm/reportes.js`.
-- La paginacion limita el tamanio maximo de pagina a 100 resultados.
-- Los reportes que usan cache invalidan automaticamente al expirar las entradas LRU por capacidad. No hay invalidacion explicita por modificacion de datos.
+- IVA fijado en 16% (modificable en `src/algorithm/reportes.js` constante `IVA`).
+- Constraint UNIQUE en `reserva_id` impide facturar dos veces la misma reserva (responde 409).
+- El endpoint `/reset` vacia BD y caches LRU para que reportes no muestren datos stale.
+- Las rutas literales (`/reset`) deben declararse ANTES que `/:id` en el router para evitar matching incorrecto.
+- snake_case en todo el codigo (variables, funciones, JSON fields).

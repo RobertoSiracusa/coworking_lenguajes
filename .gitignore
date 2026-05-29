@@ -1,1 +1,23 @@
+# Directorio antiguo de microservicios (refactorizado)
 coworking-platform-microservices/
+
+# Environment files (safety net - cada servicio tiene su propio .gitignore)
+.env
+**/.env
+**/.env.local
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker volumes (locales)
+postgres_data/
