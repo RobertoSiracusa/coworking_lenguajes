@@ -27,6 +27,7 @@ Todo desde cero, sin librerias externas:
 | Reservation | Min-Heap (cola de prioridad) | O(log n) |
 | Reservation | Interval Tree AVL | O(log n + k) |
 | Reservation | Cache LRU generico | O(1) |
+| Reservation | IndiceReservas (HashMap + TreeMap) | O(1) por filtro |
 | Billing | Hash map agrupamiento | O(n) |
 | Billing | Ventana deslizante | O(n) |
 | Billing | Cache LRU | O(1) |

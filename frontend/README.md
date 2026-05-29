@@ -97,7 +97,7 @@ Listado con filtros (capacidad minima, orden por precio/capacidad/nombre) y pagi
 
 ### Mis Reservas
 - Estadisticas personales (total, por estado, horas totales)
-- 4 filtros: sala, estado, dia, duracion (cache local, sin re-fetch)
+- 4 filtros: sala, estado, dia, duracion. Cada cambio dispara request al backend que filtra con `IndiceReservas` (HashMap + TreeMap). Server-side, no client-side.
 - Cada item muestra: nombre espacio, badge combinado (estado + estado de pago), fechas, duracion, precio/h, subtotal, IVA, total
 - Botones contextuales:
   - PENDIENTE: Cancelar

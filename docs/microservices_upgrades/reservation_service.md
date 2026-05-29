@@ -185,7 +185,43 @@ reservas
 | Deteccion de conflictos | Query SQL O(n) | Interval Tree AVL O(log n + k) |
 | Cache | No existia | CacheLRU generico O(1) |
 | Busqueda por fecha | No existia | Lineal O(n) y binaria O(n log n) + O(log n) |
+| Filtrado de Mis Reservas | Client-side (browser) | **Server-side via IndiceReservas** (HashMap + TreeMap) |
+
+## Cambios Mas Recientes
+
+### Refactor de filtros: client-side → server-side
+
+El filtrado de Mis Reservas se hacia en el frontend con `Array.filter` sobre una cache local. Ahora se hace en el backend con un indice multi-campo en memoria (`IndiceReservas`).
+
+**Nueva estructura:**
+
+`algorithm/IndiceReservas.java` mantiene 7 mapas paralelos:
+
+| Mapa | Tipo | Operacion |
+|------|------|-----------|
+| `porUsuario` | HashMap<Long, Set<Long>> | O(1) buscar por usuario |
+| `porEstado` | HashMap<EstadoReserva, Set<Long>> | O(1) por estado |
+| `porEstadoPago` | HashMap<EstadoPago, Set<Long>> | O(1) por estado pago |
+| `porSala` | HashMap<String, Set<Long>> | O(1) por sala |
+| `porDuracion` | HashMap<Integer, Set<Long>> | O(1) por duracion |
+| `porFecha` | TreeMap<LocalDate, Set<Long>> | O(log n) por dia + rangos |
+| `porId` | HashMap<Long, Reserva> | O(1) hidratar id -> entidad |
+
+**Busqueda con N filtros:** interseccion AND de los sets correspondientes. Ordena por tamano ASC para minimizar comparaciones.
+
+**Endpoint actualizado:**
+```
+GET /reservas/mis-reservas?estado=&estado_pago=&sala=&dia=&duracion=&desde=&hasta=
+```
+
+**Sincronizacion automatica:** el indice se actualiza en `crear`, `editar`, `cancelar`, `pagar`, `completar`, `cambiar estado`. Se vacia en `reset`. Se reconstruye al arrancar (`@PostConstruct`) leyendo toda la BD.
+
+**Beneficios:**
+- Centraliza logica de busqueda en el backend
+- O(1) por filtro vs O(n) lineal en client
+- No carga el browser con miles de registros
+- Consistente con el filtrado server-side de `/reservas` (admin)
 
 ## Resumen
 
-Mejoras principales: **README en espanol**, **comentarios breves**, **Interval Tree AVL** para conflictos en O(log n + k), **CacheLRU generico**, **integracion HTTP con Auth y Space**, **auto-poblar precio_hora** (preparado para Billing), **CRUD ampliado** (editar, completar), **paginacion y filtros**, **estadisticas personales**, **busqueda binaria por fecha**.
+Mejoras principales: **README en espanol**, **comentarios breves**, **Interval Tree AVL** para conflictos en O(log n + k), **CacheLRU generico**, **IndiceReservas** para filtros server-side, **integracion HTTP con Auth, Space y Billing**, **auto-poblar precio_hora**, **CRUD ampliado** (editar, completar, pagar), **paginacion y filtros**, **estadisticas personales**, **busqueda binaria por fecha**, **estados duales** (estado + estadoPago).

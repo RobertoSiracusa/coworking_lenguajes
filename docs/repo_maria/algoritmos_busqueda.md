@@ -267,6 +267,61 @@ Representacion en array:
 
 ---
 
+### 2.5 IndiceReservas (HashMap + TreeMap)
+
+**Que hace:** Indice multi-campo en memoria que permite filtrar reservas por usuario, estado, estado de pago, sala, dia, duracion o rango de fechas en O(1) o O(log n) sin tocar la BD. Sirve al endpoint `GET /reservas/mis-reservas` que filtra server-side.
+
+**Complejidad:**
+- `insertar` / `eliminar` / `actualizar`: O(1) sobre cada HashMap, O(log n) sobre TreeMap
+- `buscar` con N filtros: O(min_set + N × min_set) por la interseccion AND
+
+**Como funciona:**
+
+Estructura: 7 mapas paralelos sobre los mismos `reservaId`:
+
+| Mapa | Tipo | Propose |
+|------|------|---------|
+| `porUsuario` | `HashMap<Long, Set<Long>>` | usuarioId -> ids |
+| `porEstado` | `HashMap<EstadoReserva, Set<Long>>` | estado -> ids |
+| `porEstadoPago` | `HashMap<EstadoPago, Set<Long>>` | estadoPago -> ids |
+| `porSala` | `HashMap<String, Set<Long>>` | nombre espacio -> ids |
+| `porDuracion` | `HashMap<Integer, Set<Long>>` | duracion en horas -> ids |
+| `porFecha` | `TreeMap<LocalDate, Set<Long>>` | dia -> ids (soporta `subMap` para rangos) |
+| `porId` | `HashMap<Long, Reserva>` | id -> entidad para hidratar |
+
+**Busqueda con N filtros:**
+
+1. Obtiene set de ids por cada filtro presente
+2. Ordena sets por tamano ASC (optimizacion: empezar interseccion por el mas chico)
+3. `Set.retainAll()` aplica AND sucesivo
+4. Si el set queda vacio en algun paso, retorna inmediato
+5. Hidrata ids → reservas + ordena por `creadoEn` DESC
+
+Thread-safe con `synchronized` en todas las operaciones mutadoras.
+
+**Codigo:**
+- Archivo: `reservation-service/src/main/java/com/coworking/reservations/algorithm/IndiceReservas.java`
+- Clase principal — linea 11
+- `insertar(Reserva)` — linea ~50
+- `eliminar(Long id)` — linea ~62
+- `actualizar(Reserva)` — linea ~73
+- `buscar(usuarioId, estado, estadoPago, sala, dia, duracion, desde, hasta)` — linea ~88
+- `vaciar()`, `tamanio()`, `estadisticas()` — al final
+
+**Donde se invoca:**
+- `service/ReservaService.java`
+  - `inicializar()` al arrancar: carga todas las reservas con `indice.insertar(r)`
+  - `crear()`: `indice.insertar(guardada)` despues del save
+  - `editar()`, `cancelar()`, `pagar()`: `indice.actualizar(reserva)` despues del save
+  - `actualizarEstructuras()`: `indice.actualizar(reserva)` (sincronizacion automatica)
+  - `misReservasConFiltros(...)`: `indice.buscar(...)` — el corazon del endpoint
+  - `reset()`: `indice.vaciar()`
+- Endpoint: `GET /reservas/mis-reservas?estado=&estado_pago=&sala=&dia=&duracion=&desde=&hasta=`
+
+**Por que server-side aqui:** un admin podria tener decenas de miles de reservas en el sistema. Mandar todo al browser para filtrar en memoria seria insostenible. El indice da O(1) lookup por campo + interseccion AND sobre sets pequenos. Igual de rapido que el cache local que tenia el frontend pero centralizado y consistente.
+
+---
+
 ## 3. Billing Service (Node.js)
 
 ### 3.1 Busqueda Lineal por Fecha
@@ -456,6 +511,7 @@ Operaciones:
 | Reservation | Binaria por fecha | `algorithm/BusquedaFechas.java` | 22 | `/reservas/buscar-fecha?algoritmo=binaria` |
 | Reservation | Interval Tree AVL | `algorithm/IntervalTree.java` | 10 | Interno: deteccion conflictos |
 | Reservation | Min-Heap | `algorithm/ColaPrioridad.java` | 11 | `/cola`, `/cola/confirmar` |
+| Reservation | IndiceReservas (HashMap+TreeMap) | `algorithm/IndiceReservas.java` | 11 | `/reservas/mis-reservas?...` |
 | Billing | Lineal por fecha | `src/algorithm/busqueda.js` | 11 | `/facturas/buscar-fecha?algoritmo=lineal` |
 | Billing | Binaria por fecha | `src/algorithm/busqueda.js` | 44 | `/facturas/buscar-fecha?algoritmo=binaria` |
 | Billing | Hash map agrupar | `src/algorithm/reportes.js` | 13, 40 | `/reportes/por-espacio`, `/reportes/por-usuario` |

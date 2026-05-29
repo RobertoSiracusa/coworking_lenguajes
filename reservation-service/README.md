@@ -67,7 +67,7 @@ Servicio en `http://localhost:8003`. BD en `localhost:5434`.
 | GET | /health | Publico | Health check |
 | POST | /reservas | Usuario | Crea reserva (valida usuario y espacio via HTTP, auto-popular precio_hora) |
 | GET | /reservas | Admin | Lista con filtros, paginacion y datos enriquecidos del usuario |
-| GET | /reservas/mis-reservas | Usuario | Lista propias |
+| GET | /reservas/mis-reservas | Usuario | Lista propias con filtros server-side (sala, estado, dia, duracion, rango fechas) |
 | GET | /reservas/mis-estadisticas | Usuario | Resumen personal por estado y horas |
 | GET | /reservas/buscar-fecha | Admin | `algoritmo=lineal\|binaria` |
 | GET | /reservas/espacio/{espacioId} | Usuario | Reservas activas de un espacio (para deshabilitar slots) |
@@ -81,6 +81,19 @@ Servicio en `http://localhost:8003`. BD en `localhost:5434`.
 | POST | /cola/confirmar | Admin | Extrae siguiente del heap (cambio a CONFIRMADA) |
 | DELETE | /reservas/reset | Admin | Mantenimiento: borra todas las reservas + vacia heap e Interval Tree |
 | GET | /cache/estadisticas | Admin | Stats LRU + tamano Interval Tree |
+
+### Filtros en GET /reservas/mis-reservas (usuario)
+
+Filtrado server-side via `IndiceReservas` (HashMap + TreeMap en memoria):
+
+- `estado` - PENDIENTE, CONFIRMADA, COMPLETADA, CANCELADA
+- `estado_pago` - NO_PAGADA, PAGADA, REEMBOLSADA
+- `sala` - nombre exacto del espacio
+- `dia` - ISO date (`2026-05-28`)
+- `duracion` - horas exactas
+- `desde`, `hasta` - rango de dias (ISO date)
+
+Multiples filtros se combinan con AND. La busqueda usa interseccion de sets ordenando por tamano (mas chico primero) para minimizar comparaciones.
 
 ### Filtros y Paginacion (GET /reservas)
 
@@ -99,6 +112,16 @@ Detecta solapamientos en O(log n + k). Cada nodo guarda intervalo + `maxFin` del
 
 ### Cache LRU generico — O(1)
 HashMap + doubly linked list, thread-safe. Tipado `CacheLRU<K, V>`. Dos instancias: usuarios y espacios.
+
+### IndiceReservas (multi-campo en memoria) — O(1) por filtro
+7 mapas paralelos sobre los mismos `reservaId`:
+- HashMap por usuario, estado, estado pago, sala, duracion
+- TreeMap por dia (soporta `subMap` para rangos en O(log n))
+- HashMap por id (hidratar reserva)
+
+Busqueda con N filtros = interseccion AND de los sets correspondientes. Ordena sets por tamano para minimizar comparaciones. Se sincroniza al crear, editar, cancelar, pagar, completar y reset. Thread-safe.
+
+Sirve al endpoint `GET /reservas/mis-reservas` con filtrado server-side.
 
 ### Busqueda Lineal vs Binaria por Fecha
 - Lineal: O(n)
@@ -131,6 +154,7 @@ reservation-service/
         │   ├── ColaPrioridad.java         Min-heap manual
         │   ├── CacheLRU.java              Cache LRU generico
         │   ├── IntervalTree.java          AVL para solapamientos
+        │   ├── IndiceReservas.java        HashMap + TreeMap multi-campo
         │   └── BusquedaFechas.java        Lineal y binaria
         ├── config/
         │   ├── SecurityConfig.java        Registro JwtFilter

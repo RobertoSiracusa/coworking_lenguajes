@@ -24,7 +24,11 @@ reservation-service/
     └── java/com/coworking/reservations/
         ├── ReservationServiceApplication.java     # Punto de entrada
         ├── algorithm/
-        │   └── ColaPrioridad.java                 # Min-Heap para priorizar reservas
+        │   ├── ColaPrioridad.java                 # Min-Heap para priorizar reservas
+        │   ├── IntervalTree.java                  # AVL para deteccion de conflictos
+        │   ├── CacheLRU.java                      # Cache generico O(1)
+        │   ├── BusquedaFechas.java                # Lineal vs binaria por fecha
+        │   └── IndiceReservas.java                # HashMap+TreeMap multi-campo para filtros
         ├── config/
         │   └── SecurityConfig.java                # Registro del filtro JWT
         ├── controller/
