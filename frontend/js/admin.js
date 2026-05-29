@@ -51,22 +51,6 @@ const Admin = {
     });
   },
 
-  async cacheAuth() {
-    return fetchAPI(`${API.auth}/cache/estadisticas`);
-  },
-
-  async cacheSpace() {
-    return fetchAPI(`${API.space}/cache/estadisticas`);
-  },
-
-  async cacheReservation() {
-    return fetchAPI(`${API.reservation}/cache/estadisticas`);
-  },
-
-  async cacheBilling() {
-    return fetchAPI(`${API.billing}/cache/estadisticas`);
-  },
-
   // Gestion de usuarios
   async listarUsuarios() {
     return fetchAPI(`${API.auth}/usuarios`);
@@ -115,7 +99,6 @@ async function cargarTabAdmin(tabId) {
   if (tabId === 'admin-reservas') return cargarReservasAdmin();
   if (tabId === 'admin-usuarios') return cargarUsuariosAdmin();
   if (tabId === 'admin-facturas') return cargarReporteAdmin();
-  if (tabId === 'admin-cache') return cargarCache();
 }
 
 async function cargarUsuariosAdmin() {
@@ -428,28 +411,6 @@ async function cargarFacturasAdmin() {
     });
   });
 }
-
-async function cargarCache() {
-  const out = document.getElementById('cache-output');
-  out.textContent = 'Cargando...';
-  const resultados = {};
-  const llamadas = [
-    ['auth', Admin.cacheAuth()],
-    ['space', Admin.cacheSpace()],
-    ['reservation', Admin.cacheReservation()],
-    ['billing', Admin.cacheBilling()],
-  ];
-  for (const [nombre, prom] of llamadas) {
-    try {
-      resultados[nombre] = await prom;
-    } catch (err) {
-      resultados[nombre] = { error: err.message };
-    }
-  }
-  out.textContent = JSON.stringify(resultados, null, 2);
-}
-
-document.getElementById('btn-cargar-cache').addEventListener('click', cargarCache);
 
 // Mantenimiento - Restablecer Base de Datos
 document.getElementById('btn-reset-db').addEventListener('click', async () => {
